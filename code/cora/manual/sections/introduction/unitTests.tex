@@ -1,0 +1,24 @@
+\subsection{Unit Tests} \label{sec:unitTests}
+
+To ensure that all functions in CORA work as they should, CORA contains a number of unit tests in the folder \texttt{unitTests}.
+Those unit tests are executed by different test suits:
+%, which also categorize the unit tests:
+\begin{itemize}
+ \item \texttt{runTestSuite}: This test suite should always be executed after installing CORA or updating MATLAB/CORA and runs all basic tests.
+        All files whose function name starts with \texttt{test\_} are executed.
+ \item \texttt{runTestSuite} also takes a parameter \verb|testSuite| specifying whether certain components of CORA should be tested more sophistically.
+        Possible values are \verb|'short'| (default), \verb|'long'|, \verb|'nn'|, \verb|'examples'|, \verb|'benchmark'|, and \verb|'website'|.
+        Note: Some of these test suites take a long time to finish.
+\end{itemize}
+Additionally, we provide some unit tests for third-party packages:
+\begin{itemize}
+ \item \texttt{runTestSuite\_MP}: This test suite runs all files requiring the multiple precision toolbox\footnote{\url{https://www.mathworks.com/matlabcentral/fileexchange/6446-multiple-precision-toolbox-for-matlab}}, i.e., those that start with \texttt{testMP\_}.
+ \item \texttt{runTestSuite\_SDPT3}: This test suite runs all files requiring the SDPT3 solver\footnote{\url{https://blog.nus.edu.sg/mattohkc/softwares/sdpt3}}, i.e., those that start with \texttt{testSDPT3\_}.
+ \item \texttt{runTestSuite\_Mosek}: This test suite runs all files requiring the Mosek solver\footnote{\url{https://www.mosek.com}}, i.e., those that start with \texttt{testMosek\_}.
+\end{itemize}
+
+\textit{
+Note: According to our experience, results may vary numerically depending on the installed MATLAB version.
+CORA \CORAVERSION\ has been tested using MATLAB \MATLABversion.
+For repeatability, please also visit \cref{sec:repeatability-package}.
+}

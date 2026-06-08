@@ -1,0 +1,49 @@
+\subsection{What's new compared to CORA \lastCORAVERSION?}
+
+It is our pleasure to present many new features for CORA \CORAVERSION.
+The subsequent list is non-exhaustive and unsorted:
+
+\begin{itemize}
+
+	\item \textbf{Automatic system identification:}
+		It is now possible to automatically identify a suitable dynamic model from data~\cite{Kochdumper2025}
+		and establish reachset conformance~\cite{Luetzow2024b, Luetzow2025a}
+		via the \operator{identify} and \operator{conform} operators.
+		We also overhauled how trajectories are handled in CORA to improve efficiency.
+		For details, please visit \cref{sec:identify}, \cref{sec:conform}, and \cref{sec:trajectory}.
+
+	\item \textbf{Neural network verification:}
+		We significantly improved the verification of neural networks in CORA~\cite{koller2025a},
+		added the ability to verify graph neural networks~\cite{ladner2025gnn},
+		generate sufficient explanations for neural network predictions~\cite{ladner2025xai},
+		and overhauled the training of verifiably robust neural networks~\cite{koller2024a}.
+		Details can be found in \cref{sec:neuralNetworks}.
+
+	\item \textbf{Set containment certificate:}
+		While \operator{contains} has always returned \operator{true} if CORA was able to determine containment,
+		a returned \operator{false} might also indicate that containment holds, but CORA is not able to determine it.
+		To eliminate this ambiguity, \operator{contains} now also returns a certificate on the result.
+		Details are described in \cref{sec:contains}.
+
+	\item \textbf{Visualizations:}
+		We revised the plotting capabilities of CORA
+		and introduced a new default schema to plot sets to improve visibility on small monitors and beamers.
+		It is also possible to create animated videos directly from CORA.
+		Additionally, users might want to check \operator{CORAtable}s for better display of tabular data.
+		For details, please visit \cref{sec:plot}.
+
+	\item \textbf{Repeatability package:}
+		If you want to use CORA as part of a repeatability package,
+		we got you covered and provide a Docker file with all dependencies installed.
+		Instructions on how to set it up can be found in \cref{sec:repeatability-package}.
+
+	% always keep
+	\item \textbf{Miscellaneous:}
+ 		Minor improvements have been made in various parts of the code:
+		Some basic functionality runs more efficiently,
+		several bug fixes result in an improved user experience,
+		and more unit tests ensure greater reliability.
+		Please also have a look at \cref{sec:deprecated-functionality} for deprecated functionality and their replacements.
+
+
+\end{itemize}

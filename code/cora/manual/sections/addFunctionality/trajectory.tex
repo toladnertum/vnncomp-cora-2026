@@ -1,0 +1,89 @@
+\subsection{Class \texttt{trajectory}}
+\label{sec:trajectory}
+
+Trajectory data is stored in CORA as objects of the class \texttt{trajectory}, which provides several methods to easily visualize the simulated trajectories. An object of class \texttt{trajectory} can be constructed as follows:
+\begin{equation*}
+	\begin{split}
+		& \texttt{traj} = \texttt{trajectory}(\texttt{u},\texttt{x},\texttt{y},\texttt{t}), \\
+		& \texttt{traj} = \texttt{trajectory}(\texttt{u},\texttt{x},\texttt{y},\texttt{[]},\texttt{dt}), \\
+		& \texttt{traj} = \texttt{trajectory}(\texttt{u},\texttt{x},\texttt{y},\texttt{t},\texttt{dt},\texttt{loc}), \\
+		& \texttt{traj} = \texttt{trajectory}(\texttt{u},\texttt{x},\texttt{y},\texttt{t},\texttt{dt},\texttt{[]},\texttt{a}), \\
+		& \texttt{traj} = \texttt{trajectory}(\texttt{u},\texttt{x},\texttt{y},\texttt{t},\texttt{dt},\texttt{loc},\texttt{a},\texttt{name}), \\
+		& \texttt{traj} = \texttt{trajectory}(\texttt{u},\texttt{x},\texttt{y},\texttt{t},\texttt{dt},\texttt{loc},\texttt{a},\texttt{name},\texttt{model}),
+	\end{split}
+\end{equation*}
+with input arguments
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}[t]{l p{13cm} }
+	$\bullet$~\texttt{u} & array storing the input of the trajectory, where the number of rows is identical to the number of
+	system inputs and the number of columns is identical to the length of the trajectory.\\
+	$\bullet$~\texttt{x} & array storing the states of the trajectory, where the number of rows is identical to the number of
+	system states and the number of columns is identical to the length of the trajectory.\\
+	$\bullet$~\texttt{y} & array storing the outputs of the trajectory, where the number of rows is identical to the number of
+	system outputs and the number of columns is identical to the length of the trajectory.\\
+	$\bullet$~\texttt{t} & row vector storing the time points for the trajectory. \\
+	$\bullet$~\texttt{dt} & time step size.\\
+	$\bullet$~\texttt{loc} & array storing the indices of the locations for the trajectory (nonempty for hybrid systems only), where the number of rows is identical to the number of
+	locations and the number of columns is identical to the length of the trajectory.\\
+	$\bullet$~\texttt{a} & array storing algebraic variables for the trajectory (for differential-algebraic systems), where the number of rows is identical to the number of
+	algebraic variables and the number of columns is identical to the length of the trajectory. \\
+	$\bullet$~\texttt{name} & name for the trajectory. \\
+	$\bullet$~\texttt{model} & function handle for the model. \\
+\end{tabular}
+\end{center}
+
+Next, we explain some methods of the class \texttt{trajectory} in detail.
+
+\subsubsection{\texttt{add}}
+
+The method \texttt{add} combines two trajectories \texttt{traj1} and \texttt{traj2} by concatenating the states, outputs, and algebraic variables along the third dimension if \texttt{traj1} and \texttt{traj2} have the same dimensions, inputs, initial state, time vector, and locations.
+\begin{equation*}
+	\texttt{traj} = \texttt{add}(\texttt{traj1},\texttt{traj2}).
+\end{equation*}
+
+
+\subsubsection{\texttt{plot}}
+
+The method \texttt{plot} visualizes a two-dimensional projection of the obtained trajectories:
+
+\begin{equation*}
+	\begin{split}
+		&\texttt{han} = \operator{plot}(\texttt{traj}), \\
+		&\texttt{han} = \operator{plot}(\texttt{traj},\texttt{dims}), \\
+		&\texttt{han} = \operator{plot}(\texttt{traj},\texttt{dims},\texttt{linespec}), \\
+		&\texttt{han} = \operator{plot}(\texttt{traj},\texttt{dims},\texttt{namevaluepairs}),
+	\end{split}
+\end{equation*}
+where \texttt{traj} is an object of class \texttt{trajectory}, \texttt{han} is a handle to the plotted MATLAB graphics object, and the additional input arguments are defined as
+
+\begin{itemize}
+	\item \texttt{dims}: Integer vector $\texttt{dims} \in \mathbb{N}_{\leq n}^2$ specifying the dimensions for which the projection is visualized (default value: \texttt{dims = [1 2]}).
+	\item \texttt{linespec}: (optional) line specifications, e.g., \texttt{'--*r'}, as supported by MATLAB\footnote{\url{https://de.mathworks.com/help/matlab/ref/linespec.html}} (default value: \texttt{linespec = 'b'}).
+	\item \texttt{namevaluepairs}: (optional) further specifications as name-value pairs, e.g., \texttt{'Traj','y'} to specify which trajectory to plot (default is \texttt{'Traj','x'}), or line properties such as
+	\texttt{'LineWidth',2} and \texttt{'MarkerSize',1.5}, as supported by MATLAB.
+	They correspond to the Line Properties\footnote{\url{https://de.mathworks.com/help/matlab/ref/matlab.graphics.chart.primitive.line-properties.html}}.
+\end{itemize}
+
+
+\subsubsection{\texttt{plotOverTime}}
+
+The method \texttt{plotOverTime} visualizes a one-dimensional projection of the simulated trajectories over time:
+
+\begin{equation*}
+	\begin{split}
+		&\texttt{han} = \operator{plotOverTime}(\texttt{traj}), \\
+		&\texttt{han} = \operator{plotOverTime}(\texttt{traj},\texttt{dims}), \\
+		&\texttt{han} = \operator{plotOverTime}(\texttt{traj},\texttt{dims},\texttt{linespec}), \\
+		&\texttt{han} = \operator{plotOverTime}(\texttt{traj},\texttt{dims},\texttt{namevaluepairs}),
+	\end{split}
+\end{equation*}
+where \texttt{traj} is an object of class \texttt{trajectory}, \texttt{han} is a handle to the plotted MATLAB graphics object, and the additional input arguments are defined as
+
+\begin{itemize}
+	\item \texttt{dims}: Integer vector $\texttt{dims} \in \mathbb{N}_{\leq n}$ specifying the dimensions for which the projection is visualized (default value: \texttt{dims = 1}).
+	\item \texttt{linespec}: (optional) line specifications, e.g., \texttt{'--*r'}, as supported by MATLAB\footnote{\url{https://de.mathworks.com/help/matlab/ref/linespec.html}}.
+	\item \texttt{namevaluepairs}: (optional) further specifications as name-value pairs, e.g., \texttt{'Traj','y'} to specify which trajectory to plot (default is \texttt{'Traj','x'}), or line properties such as
+	\texttt{'LineWidth',2} and \texttt{'MarkerSize',1.5}, as supported by MATLAB.
+	They correspond to the Line Properties\footnote{\url{https://de.mathworks.com/help/matlab/ref/matlab.graphics.primitive.patch-properties.html}}.
+\end{itemize}

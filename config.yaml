@@ -1,0 +1,8 @@
+name: CORA
+ami:   # set in the submission form (R2025b AMI); config.yaml is no longer read in 2026
+scripts_dir: .
+manual_installation_step: False
+run_installation_script_as_root: False
+run_post_installation_script_as_root: False
+run_toolkit_as_root: False
+description: https://cora.in.tum.de/

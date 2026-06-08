@@ -1,0 +1,6 @@
+# MATLAB license file — contains the license number, never commit
+license.lic
+
+# local run outputs
+/results/
+*.log

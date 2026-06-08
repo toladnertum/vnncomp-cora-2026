@@ -1,0 +1,126 @@
+\subsection{Class \texttt{confPredictor}}
+\label{sec:confPredictor}
+
+Conformant and conformal predictors, which generate prediction sets with coverage guarantees according to \cite{Luetzow2025b}, are stored in CORA as objects of the class \texttt{confPredictor}. An object of class \texttt{confPredictor} can be constructed as follows:
+\begin{equation*}
+	\begin{split}
+		& \texttt{traj} = \texttt{confPredictor}(\texttt{fun}), \\
+		& \texttt{traj} = \texttt{confPredictor}(\texttt{fun},\texttt{type}), \\
+		& \texttt{traj} = \texttt{confPredictor}(\texttt{fun},\texttt{type},\texttt{task}), \\
+		& \texttt{traj} = \texttt{confPredictor}(\texttt{fun},\texttt{type},\texttt{task},\texttt{name}), 
+	\end{split}
+\end{equation*}
+with input arguments
+\begin{center}
+	\renewcommand{\arraystretch}{1.3}
+	\begin{tabular}[t]{l p{13cm} }
+		$\bullet$~\texttt{fun} & nonlinearSysDT object (only output function is relevant), neural network, or function handle, which describes the model for a point-predictor.\\
+		$\bullet$~\texttt{type} & predictor type: \texttt{'zonotope'} for zono-conformal prediction (default), \texttt{'interval'} for interval predictor model, or \texttt{'conformalAdd'} for conformal prediction with additive uncertainties.\\
+		$\bullet$~\texttt{task} & prediction task: \texttt{'reg'} for regression tasks (default) or \texttt{'class'} for classification tasks.\\
+		$\bullet$~\texttt{name} & name of the predictor. \\
+	\end{tabular}
+\end{center}
+
+Next, we explain some methods of the class \texttt{confPredictor} in detail.
+
+\subsubsection{\texttt{initializeUncertainties}}
+
+The method \texttt{initializeUncertainties} creates the initial uncertainty set \texttt{pred.U\_init}, whose structure is determined by the specifications in \texttt{up\_spec}, for predictors of the type \texttt{'zonotope'} or \texttt{'interval'}.
+\begin{equation*}
+	\texttt{pred} = \texttt{initializeUncertainties}(\texttt{pred},\texttt{up\_spec}),
+\end{equation*}
+where the following specifications can be defined:
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}[t]{l p{13cm} }
+	$\bullet$~\texttt{up\_spec.G\_u} & generator template for the uncertainty set (if not specified: set to identity matrix).\\
+	$\bullet$~\texttt{up\_spec.p\_nonzero} & boolean vector specifying which uncertainties will be identified, while the remaining ones are set to zero.\\
+	$\bullet$~\texttt{up\_spec.method} & placement strategy to determine \texttt{up\_spec.p\_nonzero} if not specified.\\
+	$\bullet$~\texttt{up\_spec.numUnc} & number of uncertainties to be identified. \\
+	$\bullet$~\texttt{up\_spec.addRandGens} & boolean determining if additional random generators will be added. \\
+\end{tabular}
+\end{center}
+
+
+\subsubsection{\texttt{calibrate}}
+
+The method \texttt{calibrate} identifies the uncertainty set \texttt{pred.U} required for generating prediction sets with valid coverage guarantees:
+
+\begin{equation*}
+	\begin{split}
+		&\texttt{pred} = \operator{calibrate}(\texttt{pred},\texttt{data}), \\
+		&\texttt{pred} = \operator{calibrate}(\texttt{pred},\texttt{data},\texttt{n\_out}), \\
+		&\texttt{pred} = \operator{calibrate}(\texttt{pred},\texttt{data},\texttt{n\_out},\texttt{options}), 
+	\end{split}
+\end{equation*}
+where the input arguments are defined as
+\begin{center}
+	\renewcommand{\arraystretch}{1.3}
+	\begin{tabular}[t]{l p{13cm} }
+		$\bullet$~\texttt{data} & calibration data, either specified as \texttt{trajectory} objects (where \texttt{traj(i).x} is the i'th input and \texttt{traj(i).y} the corresponding output) or as \texttt{struct} with \texttt{data.input(:,i)} and \texttt{data.target(:,i)}.\\
+		$\bullet$~\texttt{n\_out} & number of data points allowed outside of prediction sets.\\
+		$\bullet$~\texttt{options} & specifications for initializing the uncertainty set (\texttt{options.up\_spec}, see \texttt{initializeUncertainties}) and for the conformance synthesis (see \cref{sec:conform}).\\
+	\end{tabular}
+\end{center}
+
+
+\subsubsection{\texttt{predict}}
+
+The method \texttt{predict} generates the prediction set \texttt{Y} for a \texttt{dim\_x x 1} input vector:
+
+\begin{equation*}
+	\begin{split}
+		&\texttt{Y} = \operator{predict}(\texttt{pred},\texttt{x}).
+	\end{split}
+\end{equation*}
+
+
+\subsubsection{\texttt{evaluateData}}
+
+The method \texttt{evaluateData} evaluates the predictor over data:
+
+\begin{equation*}
+	\begin{split}
+		&[\texttt{conservatism}, \texttt{coverage}, \texttt{Y}] = \operator{evaluateData}(\texttt{pred},\texttt{data}),
+	\end{split}
+\end{equation*}
+with the input argument
+\begin{center}
+	\renewcommand{\arraystretch}{1.3}
+	\begin{tabular}[t]{l p{13cm} }
+		$\bullet$~\texttt{data} & evaluation data, either specified as \texttt{trajectory} objects (where \texttt{traj(i).x} is the i'th input and \texttt{traj(i).y} the corresponding output) or as \texttt{struct} with \texttt{data.input(:,i)} and \texttt{data.target(:,i)}.\\
+	\end{tabular}
+\end{center}
+and the output arguments
+\begin{center}
+	\renewcommand{\arraystretch}{1.3}
+	\begin{tabular}[t]{l p{13cm} }
+		$\bullet$~\texttt{conservatism} & prediction set size averaged over all data points.\\
+		$\bullet$~\texttt{coverage} & ratio of correct predictions (i.e., data points that are contained in their respective prediction set) to overall number of data points.\\
+		$\bullet$~\texttt{Y} & cell array of prediction sets for all data points.\\
+	\end{tabular}
+\end{center}
+
+\subsubsection{\texttt{evaluateCoverage}}
+
+The static method \texttt{evaluateCoverage} computes the theoretical coverage guarantees for a predictor:
+
+\begin{equation*}
+	\begin{split}
+		&\texttt{coverage} = \operator{confPredictor.evaluateCoverage}([], \texttt{confidence}, \texttt{n\_m}, \texttt{n\_theta}, \texttt{n\_out}),\\
+		&\texttt{confidence} = \operator{confPredictor.evaluateCoverage}(\texttt{coverage}, [], \texttt{n\_m}, \texttt{n\_theta}, \texttt{n\_out}),\\
+		&\texttt{n\_out} = \operator{confPredictor.evaluateCoverage}(\texttt{coverage}, \texttt{confidence}, \texttt{n\_m}, \texttt{n\_theta}, []),
+	\end{split}
+\end{equation*}
+with the input arguments
+\begin{center}
+	\renewcommand{\arraystretch}{1.3}
+	\begin{tabular}[t]{l p{13cm} }
+		$\bullet$~\texttt{coverage} & target probability $1-\epslion$, such that coverage probability  $P(y\in \mathcal{Y}(x)) \geq 1-\epsilon$, where $\mathcal{Y}(x)$ is the prediction set for data point $(x,y)$.\\
+		$\bullet$~\texttt{confidence} & confidence level $1-\zeta$, such that probability $P(P(y\in\mathcal{Y}(x)) \geq 1-\epsilon) \geq 1-\zeta$.\\
+		$\bullet$~\texttt{n\_m} & number of data points.\\
+		$\bullet$~\texttt{n\_theta} & number of identified parameters of the predictor.\\
+		$\bullet$~\texttt{n\_out} & number of removed data points in the calibration step.\\
+	\end{tabular}
+\end{center}
+The output is the value of the parameter, which was not provided as an input argument (either \texttt{coverage}, \texttt{confidence}, or \texttt{n\_out}).

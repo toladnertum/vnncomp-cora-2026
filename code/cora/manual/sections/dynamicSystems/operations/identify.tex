@@ -1,0 +1,67 @@
+\subsubsection{identify} \label{sec:identify}
+
+System identification is implemented by the operation \operator{identify}.
+In particular, the static method \texttt{identify} takes trajectory data as an input and identifies a suitable dynamic model that fits the data as accurately as possible.
+
+The syntax for the operation \texttt{identify} is:
+
+\begin{equation*}
+\begin{split}
+	& \texttt{sys} = \texttt{identify}(\texttt{traj}), \\
+	& \texttt{sys} = \texttt{identify}(\texttt{traj},\texttt{options}), \\
+	& \texttt{sys} = \texttt{identify}(\texttt{x},\texttt{t}),\\
+	& \texttt{sys} = \texttt{identify}(\texttt{x},\texttt{t},\texttt{options}),\\
+	& \texttt{sys} = \texttt{identify}(\texttt{x},\texttt{t},\texttt{u}),\\
+	& \texttt{sys} = \texttt{identify}(\texttt{x},\texttt{t},\texttt{u},\texttt{options}),
+\end{split}
+\end{equation*}
+with input arguments
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}[t]{l p{13cm} }
+	$\bullet$~\texttt{traj} & object of class \texttt{trajectory} (see \cref{sec:trajectory}) storing the trajectory data. \\
+	$\bullet$~\texttt{x} & cell-array where each entry stores the states of one trajectory as a matrix $X \in \mathbb{R}^{n \times N}$, with $N$ being the number of time steps. \\
+	$\bullet$~\texttt{t} & cell-array where each entry stores the time points of one trajectory as a vector $t \in \mathbb{R}^{N}$, with $N$ being the number of time steps. \\
+	$\bullet$~\texttt{u} & cell-array where each entry stores the inputs of one trajectory as a matrix $U \in \mathbb{R}^{m \times N-1}$, with $N$ being the number of time steps. \\
+	$\bullet$~\texttt{options} & struct containing algorithm settings \\
+	& \begin{tabular}[t]{l p{10cm}}	
+	 	--~\texttt{.alg} & string specifying the algorithm that is used for identification. The available algorithms are Dynamic Mode Decomposition \cite{Proctor2016} \texttt{`dmd'}, gradient-based optimization \texttt{`opt'}, SINDy \cite{Brunton2016} \texttt{`sparse'} (nonlinear systems only), and identification via nested functions \texttt{`nested'} (nonlinear systems only). For hybrid systems, the algorithm in \cite{Kochdumper2025} is used. The default value is \texttt{`dmd'}. \\
+	 	--~\texttt{.dt} & sampling time $\Delta t$ for discrete-time models (classes \texttt{linearSysDT} and \texttt{nonlinearSysDT} only). The default value is the average time step size of the provided trajectory data. \\
+	 	--~\texttt{.basis} & string specifying the template/basis functions used for identifying nonlinear dynamics. The availablte templates are all quadratic terms \texttt{`quad'}, all cubic terms \texttt{`cubic'}, trigonometric functions \texttt{`trig'}, and all together \texttt{`all'}. The default value is \texttt{`trig'}. \\
+	 	--~\texttt{.phi} & custom user-defined basis/template functions for identifying nonlinear dynamics specified as a function handle, e.g. \texttt{options.phi = @(x,u) [x(1);x(2)*u(1)]} (all algorithms except \texttt{`nested'}). \\
+	 	--~\texttt{.inpAff} & boolean specifying if the identified nonlinear model should be input-affine or not. The default value is \texttt{true}.\\
+	 \end{tabular}
+\end{tabular}
+\end{center}
+
+and output arguments
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}[t]{l p{13cm} }
+	$\bullet$~\texttt{sys} & dynamic system defined by any of the classes in \cref{sec:continuousDynamics,sec:hybridDynamics}, e.g., \texttt{linearSys}, \texttt{hybridAutomaton}, etc. \\
+\end{tabular}
+\end{center}
+
+
+Let us demonstrate the operation \texttt{identify} by an example:
+
+\begin{center}
+\begin{minipage}[t]{0.58\textwidth}
+	\footnotesize
+	\input{./MATLABcode/example_identify}
+\end{minipage}
+\begin{minipage}[t]{0.4\textwidth}
+	\vspace{10pt}
+
+	\begin{verbatim}
+	Command Window:	
+		
+	sys.A =
+
+   -0.7034   -1.9941
+    1.9745   -0.6953
+	\end{verbatim}
+\end{minipage}
+\end{center}

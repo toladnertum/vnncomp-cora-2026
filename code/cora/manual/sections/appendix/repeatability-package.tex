@@ -1,0 +1,39 @@
+\section{Repeatability Package}\label{sec:repeatability-package}
+
+We provide an easy way to use CORA within a repeatability package using Docker\footnote{Docker: \url{https://www.docker.com/}}.
+This allows users to recreate your results with a single click.
+A template for the repeatability package as well as the details on how to set up the repeatability package can be found at \\
+\textttsmall{./cora/ci/unitTests/repeatability-template}.
+
+To use the template, please copy the aforementioned folder out of that folder
+and place the CORA folder as well as your scripts within the contained \textttsmall{./code} folder.
+Your folder structure should then look as follows:
+
+\begin{itemize}[label={}]
+\item \textttsmall{./}: base path
+\begin{itemize}[label={}]
+\item \textttsmall{./code}: path to code
+\begin{itemize}[label={}]
+\item \textttsmall{./cora}: path to CORA
+\item \textttsmall{./scripts}: path to auxiliary Matlab scripts
+\item \textttsmall{./main.m}: main Matlab script
+\end{itemize}
+
+\item \textttsmall{./data}: path to data
+\item \textttsmall{./results/<evalname>}: path to results (created after execution)
+\begin{itemize}[label={}]
+\item \textttsmall{./evaluation}: path to store any evaluation results
+\item \textttsmall{./plots}: path to plots
+\item \textttsmall{./results.txt}: logs of all outputs to command window
+\end{itemize}
+
+\item \textttsmall{./Dockerfile}: Dockerfile
+\item \textttsmall{./license.lic}: place license file here
+\item \textttsmall{./README.md}: read me file
+\item \textttsmall{./run.sh}: main script to run from command line using Docker
+\item \textttsmall{./settings.sh}: settings for bash scripts
+\item \textttsmall{./screen.sh}: script to run \textttsmall{run.sh} within a linux screen
+\end{itemize}
+\end{itemize}
+
+Please visit the \textttsmall{README.md} file for details on licensing and running the repeatability package.

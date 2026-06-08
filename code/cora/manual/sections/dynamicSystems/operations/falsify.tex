@@ -1,0 +1,59 @@
+\subsubsection{falsify} \label{sec:falsify}
+
+The operation \operator{falsify} aims to find a counter-example in form of a falsifying trajectory that demonstrates that a specification is not save. The operation implements both white-box algorithms, which explicitely exploit knowledge about the known system dynamics, as well as black-box algorithms, which do not require any knowledge about the system dynamics.
+
+The syntax for the operation \texttt{falsify} is:
+\begin{equation*}
+\begin{split}
+	& [\texttt{res},\texttt{fals}] = \texttt{falsify}(\texttt{sys},\texttt{params},\texttt{spec}), \\
+	& [\texttt{res},\texttt{fals}] = \texttt{falsify}(\texttt{sys},\texttt{params},\texttt{options},\texttt{spec}),
+\end{split}
+\end{equation*}
+with input arguments
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}[t]{l p{13cm} }
+	$\bullet$~\texttt{sys} & dynamic system defined by any of the classes in \cref{sec:continuousDynamics,sec:hybridDynamics}, e.g., \texttt{linearSys}, \texttt{hybridAutomaton}, etc. \\
+	$\bullet$~\texttt{params} & struct containing the parameters that define the reachability problem. The parameters are identical to those for the operation \operator{reach} (see \cref{sec:reach}). \\
+	$\bullet$~\texttt{spec} & object of class \texttt{specification} (see \cref{sec:specification}) or class \texttt{stl} (see \cref{sec:temporalLogic}), which represents the specifications the system has to fulfill. \\
+	$\bullet$~\texttt{options} & struct containing algorithm settings \\
+	& \begin{tabular}[t]{l p{10cm}}	
+	 	--~\texttt{.falsifyAlg} & falsification algorithm: \texttt{'singleOpt'} (white-box falsification formulated as one single optimization problem), \texttt{'multiOpt'} (white-box falsification using multiple optimization problems), \texttt{'monteCarlo'} (black-box falsification using Monte-Carlo sampling), \texttt{'koopman'} (black-box falsification via Koopman surrogate models \cite{Bak2024}).  \\
+	 	--~\texttt{.nrConstInp} & number piecewise-constant input values within the input used for falsification (integer $\geq 1$). If not specified, the number of input values is automatically refined by the algorithm.\\
+	 	--~\texttt{.maxTime} & maximum computation time allocated for falsification in seconds. The default value is 600.
+	 \end{tabular}
+\end{tabular}
+\end{center}
+
+and output arguments
+
+\begin{center}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}[t]{l p{13cm} }
+	$\bullet$~\texttt{res} & Boolean flag that indicates whether the specifications could be falsified (\texttt{res} = 1) or not (\texttt{res} = 0). \\
+	$\bullet$~\texttt{fals} & struct storing the falsifying trajectory \\
+	& \begin{tabular}[t]{l p{10cm}}	
+	 	--~\texttt{.x0} & point from the initial set.  \\
+	 	--~\texttt{.u} & values for the piecewise-constant input signal. \\
+	 	--~\texttt{.tu} & switching times for the input signal. \\
+	 	--~\texttt{.traj} & falfifying trajectory (class \texttt{trajectory}, see \cref{sec:trajectory})
+	 \end{tabular}
+\end{tabular}
+\end{center}
+
+To apply the operation $\texttt{falsify}$ to black-box systems (e.g. MATLAB Simulink models), one has to replace \texttt{sys} by a function handle \texttt{fun} defining a function $[t,x] = f(x_0,u)$, which takes an initial state $x_0$ and a piecewise-constant input signal $u$ as an input and returnes the times $t$ and the states $x$ of the corresponding simulated trajectory.
+
+Let us demonstrate the operation \texttt{falsify} by an example:
+
+\begin{center}
+\begin{minipage}[t]{0.58\textwidth}
+	\footnotesize
+	\input{./MATLABcode/example_falsify}
+\end{minipage}
+\begin{minipage}[t]{0.4\textwidth}
+	\vspace{0pt}
+	\centering
+	\includetikz{./figures/tikz/contDynamics/example_falsify}
+\end{minipage}
+\end{center}
