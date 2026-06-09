@@ -27,6 +27,7 @@ function obj = convertDLToolboxNetwork(dlt_layers, verbose)
 %                25-July-2023 (TL, nnElementwiseAffineLayer)
 %                31-July-2023 (LK, nnSoftmaxLayer)
 %                14-March-2026 (BK, ScalingLayer, CustomOutputLayer)
+%                09-June-2026 (BK, robust R2025b custom-layer import)
 % Last revision: 17-August-2022
 
 % ------------------------------ BEGIN CODE -------------------------------
@@ -411,7 +412,7 @@ function [layers,inputSize,currentSize,nextInputIdx] = ...
         return
 
     % Custom Layers -----------------------------------------------
-    elseif strcmp(dlt_layer.Name, 'Gemm_To_ReshapeLayer1000')
+    elseif startsWith(dlt_layer.Name, 'Gemm_To_ReshapeLayer')
         % TODO: safe as a CORA linear layer, followed by a reshpae layer
         % Read the corresponding weights from the dl toolbox layer
         W = double(dlt_layer.gen_l1_0_weight');   % now 512 x 5
@@ -471,66 +472,69 @@ function [layers,inputSize,currentSize,nextInputIdx] = ...
             layers{end+1} = nnReshapeLayer(idx_out{1}, dlt_layer.Name);
         end
 
-    elseif strcmp(dlt_layer.Name, 'MatMul_To_ReluLayer1003')
-        % for VNN Comp (test -- test_nano.onnx)
-        params = dlt_layer.ONNXParams;
-        layers{end+1} = nnLinearLayer(params.Learnables.Ma_MatMulcst,0, ...
+    elseif startsWith(dlt_layer.Name, 'MatMul_To_ReluLayer')
+        % test_nano.onnx; R2025b exposes weights as layer properties
+        layers{end+1} = nnLinearLayer(double(dlt_layer.Ma_MatMulcst),0, ...
             dlt_layer.Name);
         layers{end+1} = nnReLULayer(dlt_layer.Name);
-    elseif strcmp(dlt_layer.Name, 'MatMul_To_AddLayer1003')
-        % for VNN Comp (test)
-        params = dlt_layer.ONNXParams;
-        if ~isfield(params.Learnables,'W2')
-            % (test --- test_tiny.onnx)
-            layers{end+1} = nnLinearLayer(params.Learnables.W0,0,dlt_layer.Name);
+    elseif startsWith(dlt_layer.Name, 'MatMul_To_AddLayer') || ...
+            startsWith(dlt_layer.Name, 'Mul_To_AddLayer')
+        % match by name prefix and weight properties; importer suffix varies.
+        % R2025b exposes weights as layer properties, biases in Vars.
+        if isprop(dlt_layer,'fc_1_copy_MatMul_W')
+            % cora (mnist, svhn, cifar10): 8-layer fully connected
+            layers{end+1} = nnLinearLayer(double(dlt_layer.fc_1_copy_MatMul_W), double(dlt_layer.Vars.fc_1_copy_Add_B),dlt_layer.Name);
             layers{end+1} = nnReLULayer(dlt_layer.Name);
-            layers{end+1} = nnLinearLayer(params.Learnables.W1,0,dlt_layer.Name);
+            layers{end+1} = nnLinearLayer(double(dlt_layer.fc_2_copy_MatMul_W), double(dlt_layer.Vars.fc_2_copy_Add_B),dlt_layer.Name);
+            layers{end+1} = nnReLULayer(dlt_layer.Name);
+            layers{end+1} = nnLinearLayer(double(dlt_layer.fc_3_copy_MatMul_W), double(dlt_layer.Vars.fc_3_copy_Add_B),dlt_layer.Name);
+            layers{end+1} = nnReLULayer(dlt_layer.Name);
+            layers{end+1} = nnLinearLayer(double(dlt_layer.fc_4_copy_MatMul_W), double(dlt_layer.Vars.fc_4_copy_Add_B),dlt_layer.Name);
+            layers{end+1} = nnReLULayer(dlt_layer.Name);
+            layers{end+1} = nnLinearLayer(double(dlt_layer.fc_5_copy_MatMul_W), double(dlt_layer.Vars.fc_5_copy_Add_B),dlt_layer.Name);
+            layers{end+1} = nnReLULayer(dlt_layer.Name);
+            layers{end+1} = nnLinearLayer(double(dlt_layer.fc_6_copy_MatMul_W), double(dlt_layer.Vars.fc_6_copy_Add_B),dlt_layer.Name);
+            layers{end+1} = nnReLULayer(dlt_layer.Name);
+            layers{end+1} = nnLinearLayer(double(dlt_layer.fc_7_copy_MatMul_W), double(dlt_layer.Vars.fc_7_copy_Add_B),dlt_layer.Name);
+            layers{end+1} = nnReLULayer(dlt_layer.Name);
+            layers{end+1} = nnLinearLayer(double(dlt_layer.fc_8_copy_MatMul_W), double(dlt_layer.Vars.fc_8_copy_Add_B),dlt_layer.Name);
+        elseif isprop(dlt_layer,'W2')
+            % test_small.onnx
+            layers{end+1} = nnLinearLayer(double(dlt_layer.W0)',[1.5; 1.5],dlt_layer.Name);
+            layers{end+1} = nnReLULayer(dlt_layer.Name);
+            layers{end+1} = nnLinearLayer(double(dlt_layer.W1),[2.5; 2.5],dlt_layer.Name);
+            layers{end+1} = nnReLULayer(dlt_layer.Name);
+            layers{end+1} = nnLinearLayer(double(dlt_layer.W2)',3.5,dlt_layer.Name);
+        elseif isprop(dlt_layer,'W0')
+            % test_tiny.onnx
+            layers{end+1} = nnLinearLayer(double(dlt_layer.W0),0,dlt_layer.Name);
+            layers{end+1} = nnReLULayer(dlt_layer.Name);
+            layers{end+1} = nnLinearLayer(double(dlt_layer.W1),0,dlt_layer.Name);
         else
-            % (test --- test_small.onnx)
-            layers{end+1} = nnLinearLayer(params.Learnables.W0',[1.5; 1.5],dlt_layer.Name);
-            layers{end+1} = nnReLULayer(dlt_layer.Name);
-            layers{end+1} = nnLinearLayer(params.Learnables.W1,[2.5; 2.5],dlt_layer.Name);
-            layers{end+1} = nnReLULayer(dlt_layer.Name);
-            layers{end+1} = nnLinearLayer(params.Learnables.W2',3.5,dlt_layer.Name);
+            % unrecognized variant, skip
+            if verbose
+                CORAwarning('CORA:nn',"Skipping '%s'. Not implemented in cora yet!.", class(dlt_layer))
+            end
+            inputSize = [];
+            return
         end
-    elseif strcmp(dlt_layer.Name, 'MatMul_To_AddLayer1019') || ...
-            strcmp(dlt_layer.Name, 'Mul_To_AddLayer1021')
-        % for VNN Comp (cora - mnist, svhn, cifar10)
-        % requires hard-coding ...
-        params = dlt_layer.ONNXParams;
-        layers{end+1} = nnLinearLayer(params.Learnables.fc_1_copy_MatMul_W, params.Nonlearnables.fc_1_copy_Add_B,dlt_layer.Name);
-        layers{end+1} = nnReLULayer(dlt_layer.Name);
-        layers{end+1} = nnLinearLayer(params.Learnables.fc_2_copy_MatMul_W, params.Nonlearnables.fc_2_copy_Add_B,dlt_layer.Name);
-        layers{end+1} = nnReLULayer(dlt_layer.Name);
-        layers{end+1} = nnLinearLayer(params.Learnables.fc_3_copy_MatMul_W, params.Nonlearnables.fc_3_copy_Add_B,dlt_layer.Name);
-        layers{end+1} = nnReLULayer(dlt_layer.Name);
-        layers{end+1} = nnLinearLayer(params.Learnables.fc_4_copy_MatMul_W, params.Nonlearnables.fc_4_copy_Add_B,dlt_layer.Name);
-        layers{end+1} = nnReLULayer(dlt_layer.Name);
-        layers{end+1} = nnLinearLayer(params.Learnables.fc_5_copy_MatMul_W, params.Nonlearnables.fc_5_copy_Add_B,dlt_layer.Name);
-        layers{end+1} = nnReLULayer(dlt_layer.Name);
-        layers{end+1} = nnLinearLayer(params.Learnables.fc_6_copy_MatMul_W, params.Nonlearnables.fc_6_copy_Add_B,dlt_layer.Name);
-        layers{end+1} = nnReLULayer(dlt_layer.Name);
-        layers{end+1} = nnLinearLayer(params.Learnables.fc_7_copy_MatMul_W, params.Nonlearnables.fc_7_copy_Add_B,dlt_layer.Name);
-        layers{end+1} = nnReLULayer(dlt_layer.Name);
-        layers{end+1} = nnLinearLayer(params.Learnables.fc_8_copy_MatMul_W, params.Nonlearnables.fc_8_copy_Add_B,dlt_layer.Name);
 
-    elseif strcmp(dlt_layer.Name, 'Sub_To_AddLayer1018')
-        % for VNN Comp (test_sat.onnx)
-        % requires hard-coding ...
-        params = dlt_layer.ONNXParams;
-        layers{end+1} = nnLinearLayer(params.Learnables.Operation_1_MatMul_W, params.Nonlearnables.Operation_1_Add_B,dlt_layer.Name);
+    elseif startsWith(dlt_layer.Name, 'Sub_To_AddLayer')
+        % test_sat/test_unsat; match by prefix, importer suffix varies.
+        % R2025b exposes weights as layer properties, biases in Vars.
+        layers{end+1} = nnLinearLayer(double(dlt_layer.Operation_1_MatMul_W), double(dlt_layer.Vars.Operation_1_Add_B),dlt_layer.Name);
         layers{end+1} = nnReLULayer(dlt_layer.Name);
-        layers{end+1} = nnLinearLayer(params.Learnables.Operation_2_MatMul_W, params.Nonlearnables.Operation_2_Add_B,dlt_layer.Name);
+        layers{end+1} = nnLinearLayer(double(dlt_layer.Operation_2_MatMul_W), double(dlt_layer.Vars.Operation_2_Add_B),dlt_layer.Name);
         layers{end+1} = nnReLULayer(dlt_layer.Name);
-        layers{end+1} = nnLinearLayer(params.Learnables.Operation_3_MatMul_W, params.Nonlearnables.Operation_3_Add_B,dlt_layer.Name);
+        layers{end+1} = nnLinearLayer(double(dlt_layer.Operation_3_MatMul_W), double(dlt_layer.Vars.Operation_3_Add_B),dlt_layer.Name);
         layers{end+1} = nnReLULayer(dlt_layer.Name);
-        layers{end+1} = nnLinearLayer(params.Learnables.Operation_4_MatMul_W, params.Nonlearnables.Operation_4_Add_B,dlt_layer.Name);
+        layers{end+1} = nnLinearLayer(double(dlt_layer.Operation_4_MatMul_W), double(dlt_layer.Vars.Operation_4_Add_B),dlt_layer.Name);
         layers{end+1} = nnReLULayer(dlt_layer.Name);
-        layers{end+1} = nnLinearLayer(params.Learnables.Operation_5_MatMul_W, params.Nonlearnables.Operation_5_Add_B,dlt_layer.Name);
+        layers{end+1} = nnLinearLayer(double(dlt_layer.Operation_5_MatMul_W), double(dlt_layer.Vars.Operation_5_Add_B),dlt_layer.Name);
         layers{end+1} = nnReLULayer(dlt_layer.Name);
-        layers{end+1} = nnLinearLayer(params.Learnables.Operation_6_MatMul_W, params.Nonlearnables.Operation_6_Add_B,dlt_layer.Name);
+        layers{end+1} = nnLinearLayer(double(dlt_layer.Operation_6_MatMul_W), double(dlt_layer.Vars.Operation_6_Add_B),dlt_layer.Name);
         layers{end+1} = nnReLULayer(dlt_layer.Name);
-        layers{end+1} = nnLinearLayer(params.Learnables.linear_7_MatMul_W, params.Nonlearnables.linear_7_Add_B,dlt_layer.Name)
+        layers{end+1} = nnLinearLayer(double(dlt_layer.linear_7_MatMul_W), double(dlt_layer.Vars.linear_7_Add_B),dlt_layer.Name)
     else
         % unknown layer, show warning
         if verbose

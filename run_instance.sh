@@ -30,4 +30,8 @@ echo "Running $TOOL_NAME on benchmark instance $BENCHMARK with onnx file $ONNX_F
 # Check GPU status.
 nvidia-smi
 
-sudo matlab -nodisplay -r "run_instance('$BENCHMARK','$ONNX_FILE','$VNNLIB_FILE','$RESULTS_FILE',$TIMEOUT,true); quit;"
+# add the toolkit (and CORA under code/) to the MATLAB path; savepath is not
+# kept for these sudo matlab runs. do not cd: the onnx/vnnlib/results paths are relative.
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+sudo matlab -nodisplay -r "addpath(genpath('$SCRIPT_DIR')); run_instance('$BENCHMARK','$ONNX_FILE','$VNNLIB_FILE','$RESULTS_FILE',$TIMEOUT,true); quit;"
