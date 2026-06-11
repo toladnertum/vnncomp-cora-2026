@@ -22,9 +22,9 @@ function options = validateNNoptions(options,varargin)
 % Authors:       Tobias Ladner, Lukas Koller
 % Written:       29-November-2022
 % Last update:   16-February-2023 (poly_method)
-%                11-June-2026 (BK, removed zonotack-layerwise refinement)
 %                01-March-2023 (backprop)
 %                21-February-2024 (merged options.nn)
+%                11-June-2026 (BK, removed zonotack-layerwise refinement)
 % Last revision: ---
 
 % ------------------------------ BEGIN CODE -------------------------------
