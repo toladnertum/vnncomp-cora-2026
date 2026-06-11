@@ -21,7 +21,7 @@ function writeCounterexample(fid, x_, y_, vnnlibInfo)
 
 % Authors:       Benedikt Kellner
 % Written:       05-June-2026
-% Last update:   ---
+% Last update:   11-June-2026 (BK, full double precision)
 % Last revision: ---
 
 % ------------------------------ BEGIN CODE -------------------------------
@@ -32,11 +32,12 @@ if isempty(vnnlibInfo) || ~isfield(vnnlibInfo, 'version') ...
         || ~strcmp(vnnlibInfo.version, '2.0')
     % v1 legacy: ((X_0 v) ... (Y_0 v) ...)
     fprintf(fid, '(');
+    % full double precision; 6 decimals breaks CE replay on sensitive nets
     for j = 1:size(x_, 1)
-        fprintf(fid, ['(X_%d %f)' newline], j-1, x_(j));
+        fprintf(fid, ['(X_%d %.16g)' newline], j-1, x_(j));
     end
     for j = 1:size(y_, 1)
-        fprintf(fid, ['(Y_%d %f)' newline], j-1, y_(j));
+        fprintf(fid, ['(Y_%d %.16g)' newline], j-1, y_(j));
     end
     fprintf(fid, ')');
 else
@@ -50,13 +51,13 @@ else
             nElems = prod(inp.shape);
             fprintf(fid, '%s %s %s\n', inp.name, inp.dtype, ...
                 aux_formatShape(inp.shape));
-            fprintf(fid, '%g\n', x_(xIdx:xIdx+nElems-1));
+            fprintf(fid, '%.16g\n', x_(xIdx:xIdx+nElems-1));
             xIdx = xIdx + nElems;
         end
         nOut = prod(net.output.shape);
         fprintf(fid, '%s %s %s\n', net.output.name, net.output.dtype, ...
             aux_formatShape(net.output.shape));
-        fprintf(fid, '%g\n', y_(yIdx:yIdx+nOut-1));
+        fprintf(fid, '%.16g\n', y_(yIdx:yIdx+nOut-1));
         yIdx = yIdx + nOut;
     end
 end
