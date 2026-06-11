@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Installation script used for VNN-COMP. Ubuntu, MATLAB R2024a
+# Installation script used for VNN-COMP. Ubuntu, MATLAB R2025b
 
 TOOL_NAME="CORA"
 VERSION_STRING="v1"

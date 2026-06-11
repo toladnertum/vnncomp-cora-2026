@@ -27,7 +27,7 @@ function obj = convertDLToolboxNetwork(dlt_layers, verbose)
 %                25-July-2023 (TL, nnElementwiseAffineLayer)
 %                31-July-2023 (LK, nnSoftmaxLayer)
 %                14-March-2026 (BK, ScalingLayer, CustomOutputLayer)
-%                09-June-2026 (BK, robust R2025b custom-layer import)
+%                09-June-2026 (BK, R2025b custom-layer import)
 % Last revision: 17-August-2022
 
 % ------------------------------ BEGIN CODE -------------------------------
@@ -473,14 +473,13 @@ function [layers,inputSize,currentSize,nextInputIdx] = ...
         end
 
     elseif startsWith(dlt_layer.Name, 'MatMul_To_ReluLayer')
-        % test_nano.onnx; R2025b exposes weights as layer properties
+        % test_nano.onnx
         layers{end+1} = nnLinearLayer(double(dlt_layer.Ma_MatMulcst),0, ...
             dlt_layer.Name);
         layers{end+1} = nnReLULayer(dlt_layer.Name);
     elseif startsWith(dlt_layer.Name, 'MatMul_To_AddLayer') || ...
             startsWith(dlt_layer.Name, 'Mul_To_AddLayer')
-        % match by name prefix and weight properties; importer suffix varies.
-        % R2025b exposes weights as layer properties, biases in Vars.
+        % importer suffix varies; R2025b stores weights as properties, biases in Vars
         if isprop(dlt_layer,'fc_1_copy_MatMul_W')
             % cora (mnist, svhn, cifar10): 8-layer fully connected
             layers{end+1} = nnLinearLayer(double(dlt_layer.fc_1_copy_MatMul_W), double(dlt_layer.Vars.fc_1_copy_Add_B),dlt_layer.Name);
@@ -520,8 +519,7 @@ function [layers,inputSize,currentSize,nextInputIdx] = ...
         end
 
     elseif startsWith(dlt_layer.Name, 'Sub_To_AddLayer')
-        % test_sat/test_unsat; match by prefix, importer suffix varies.
-        % R2025b exposes weights as layer properties, biases in Vars.
+        % test_sat/test_unsat.onnx
         layers{end+1} = nnLinearLayer(double(dlt_layer.Operation_1_MatMul_W), double(dlt_layer.Vars.Operation_1_Add_B),dlt_layer.Name);
         layers{end+1} = nnReLULayer(dlt_layer.Name);
         layers{end+1} = nnLinearLayer(double(dlt_layer.Operation_2_MatMul_W), double(dlt_layer.Vars.Operation_2_Add_B),dlt_layer.Name);
