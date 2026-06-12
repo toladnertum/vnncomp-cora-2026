@@ -48,8 +48,8 @@ options.nn.input_split_heuristic = 'zono-norm-gradient';
 options.nn.neuron_split_heuristic = 'zono-norm-gradient';
 options.nn.relu_constraint_heuristic = 'zono-norm-gradient';
 
-% strip year suffix, e.g. 'acasxu_2023' -> 'acasxu'
-tok = regexp(benchName,'^(.+?)[_-](20\d{2})$','tokens');
+% strip year suffix, e.g. 'acasxu_2023' -> 'acasxu', 'cgan2026' -> 'cgan'
+tok = regexp(benchName,'^(.+?)[_-]?(20\d{2})$','tokens');
 if ~isempty(tok)
     benchName_ = tok{1}{1};
 else

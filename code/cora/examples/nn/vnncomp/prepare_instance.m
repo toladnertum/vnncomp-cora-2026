@@ -299,7 +299,8 @@ end
 end
 
 function [name,year] = aux_parseBenchmarkName(str) % strip optional year suffix
-tok = regexp(str, '^(.+?)[_-](20\d{2})$', 'tokens');
+% separator is optional, e.g. 'cgan2026' -> 'cgan'
+tok = regexp(str, '^(.+?)[_-]?(20\d{2})$', 'tokens');
 if ~isempty(tok)
     name = tok{1}{1};
     year = tok{1}{2};
