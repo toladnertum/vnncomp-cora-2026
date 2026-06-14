@@ -29,12 +29,19 @@ nvidia-smi
 # kept for these sudo matlab runs. do not cd: the onnx/vnnlib paths are relative.
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
+# double single quotes so multi-network paths like [('f','..'),('g','..')]
+# don't break the MATLAB string literals
+BENCHMARK_M=${BENCHMARK//\'/\'\'}
+ONNX_M=${ONNX_FILE//\'/\'\'}
+VNNLIB_M=${VNNLIB_FILE//\'/\'\'}
+
 # Build MATLAB command, optionally with overrides file.
 if [ -n "$CORA_OVERRIDES_FILE" ] && [ -f "$CORA_OVERRIDES_FILE" ]; then
     echo "Using overrides file: $CORA_OVERRIDES_FILE"
-    sudo matlab -nodisplay -r "addpath(genpath('$SCRIPT_DIR')); prepare_instance('$BENCHMARK','$ONNX_FILE','$VNNLIB_FILE','$CORA_OVERRIDES_FILE'); quit;"
+    OVERRIDES_M=${CORA_OVERRIDES_FILE//\'/\'\'}
+    sudo matlab -nodisplay -r "addpath(genpath('$SCRIPT_DIR')); prepare_instance('$BENCHMARK_M','$ONNX_M','$VNNLIB_M','$OVERRIDES_M'); quit;"
 else
-    sudo matlab -nodisplay -r "addpath(genpath('$SCRIPT_DIR')); prepare_instance('$BENCHMARK','$ONNX_FILE','$VNNLIB_FILE'); quit;"
+    sudo matlab -nodisplay -r "addpath(genpath('$SCRIPT_DIR')); prepare_instance('$BENCHMARK_M','$ONNX_M','$VNNLIB_M'); quit;"
 fi
 
 exit 0
