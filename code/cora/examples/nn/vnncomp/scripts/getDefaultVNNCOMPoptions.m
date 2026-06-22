@@ -133,6 +133,14 @@ elseif strcmp(benchName_,'safenlp')
     options.nn.num_neuron_splits = 1;
     options.nn.num_relu_constraints = 100;
 
+elseif strcmp(benchName_,'soundnessbench') % 2025 submission settings
+    options.nn.interval_center = true;
+    options.nn.train.num_approx_err = 50;
+    options.nn.train.mini_batch_size = 2^5;
+    options.nn.num_splits = 2;
+    options.nn.num_dimensions = 1;
+    options.nn.num_neuron_splits = 1;
+
 elseif strcmp(benchName_,'tinyimagenet') % VNN-COMP'24
     options.nn.interval_center = true;
     options.nn.train.num_init_gens = 500;

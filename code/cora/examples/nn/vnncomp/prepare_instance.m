@@ -222,6 +222,15 @@ elseif strcmp(benchName,'safenlp')
 elseif strcmp(benchName,'sat_relu')
     nn = neuralNetwork.readONNXNetwork(modelPath,verbose,'BC');
 
+elseif strcmp(benchName,'soundnessbench')
+    % residual variant not supported by the ONNX import
+    if contains(modelName{1},'residual')
+        throw(CORAerror('CORA:notSupported',...
+            sprintf("Model '%s' of benchmark '%s' is not " + ...
+            "supported!",modelPath,benchName)));
+    end
+    nn = neuralNetwork.readONNXNetwork(modelPath,verbose,'BC');
+
 elseif strcmp(benchName,'tinyimagenet')
     nn = neuralNetwork.readONNXNetwork(modelPath,verbose,'BCSS', ...
         '','dagnetwork',true);
