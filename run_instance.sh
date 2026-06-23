@@ -41,4 +41,5 @@ ONNX_M=${ONNX_FILE//\'/\'\'}
 VNNLIB_M=${VNNLIB_FILE//\'/\'\'}
 RESULTS_M=${RESULTS_FILE//\'/\'\'}
 
-sudo matlab -nodisplay -r "addpath(genpath('$SCRIPT_DIR')); run_instance('$BENCHMARK_M','$ONNX_M','$VNNLIB_M','$RESULTS_M',$TIMEOUT,true); quit;"
+# -batch never blocks on a prompt, so an error exits fast instead of hanging
+sudo matlab -batch "addpath(genpath('$SCRIPT_DIR')); run_instance('$BENCHMARK_M','$ONNX_M','$VNNLIB_M','$RESULTS_M',$TIMEOUT,true);"

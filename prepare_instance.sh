@@ -39,9 +39,11 @@ VNNLIB_M=${VNNLIB_FILE//\'/\'\'}
 if [ -n "$CORA_OVERRIDES_FILE" ] && [ -f "$CORA_OVERRIDES_FILE" ]; then
     echo "Using overrides file: $CORA_OVERRIDES_FILE"
     OVERRIDES_M=${CORA_OVERRIDES_FILE//\'/\'\'}
-    sudo matlab -nodisplay -r "addpath(genpath('$SCRIPT_DIR')); prepare_instance('$BENCHMARK_M','$ONNX_M','$VNNLIB_M','$OVERRIDES_M'); quit;"
+    sudo matlab -batch "addpath(genpath('$SCRIPT_DIR')); r=prepare_instance('$BENCHMARK_M','$ONNX_M','$VNNLIB_M','$OVERRIDES_M'); exit(double(r));"
 else
-    sudo matlab -nodisplay -r "addpath(genpath('$SCRIPT_DIR')); prepare_instance('$BENCHMARK_M','$ONNX_M','$VNNLIB_M'); quit;"
+    sudo matlab -batch "addpath(genpath('$SCRIPT_DIR')); r=prepare_instance('$BENCHMARK_M','$ONNX_M','$VNNLIB_M'); exit(double(r));"
 fi
 
-exit 0
+# -batch exits non-zero on error and never blocks on a prompt; pass the code
+# through so failures surface fast instead of hanging until the harness timeout
+exit $?
