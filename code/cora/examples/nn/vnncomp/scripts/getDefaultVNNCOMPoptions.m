@@ -86,12 +86,11 @@ elseif strcmp(benchName_,'collins_rul_cnn') % VNN-COMP'24
     options.nn.train.num_approx_err = 100;
 
 elseif strcmp(benchName_,'cora')
-    % 2025 submission settings (layerwise refinement no longer available)
     options.nn.num_relu_constraints = inf;
-    options.nn.train.mini_batch_size = 1;
+    options.nn.train.mini_batch_size = 2^5;
     options.nn.num_splits = 2;
     options.nn.num_dimensions = 1;
-    options.nn.num_neuron_splits = 2;
+    options.nn.num_neuron_splits = 1;
     options.nn.batch_union_conzonotope_bounds = false;
 
 elseif strcmp(benchName_,'metaroom')
