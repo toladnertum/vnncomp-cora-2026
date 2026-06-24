@@ -127,13 +127,12 @@ elseif ismember(benchName_,{'monotonic_acasxu','isomorphic_acasxu'})
     options.nn.refinement_method = 'naive';
 
 elseif strcmp(benchName_,'safenlp')
-    % large batch (tiny net) lets light neuron-split + relu tightening run in
-    % parallel, resolving more instances without the sequential time blow-up
+    % 2025 lean settings; splitting/tightening raise per-instance cost and
+    % blow the time budget on 1080 instances
     options.nn.num_splits = 2;
     options.nn.num_dimensions = 1;
-    options.nn.num_neuron_splits = 1;
-    options.nn.num_relu_constraints = 50;
-    options.nn.train.mini_batch_size = 2^13;
+    options.nn.num_neuron_splits = 0;
+    options.nn.num_relu_constraints = 0;
 
 elseif strcmp(benchName_,'soundnessbench') % 2025 submission settings
     options.nn.interval_center = true;
