@@ -132,6 +132,8 @@ elseif strcmp(benchName_,'safenlp')
     options.nn.num_dimensions = 1;
     options.nn.num_neuron_splits = 0;
     options.nn.num_relu_constraints = 0;
+    % tiny net, use the GPU memory to explore more branches per iteration
+    options.nn.train.mini_batch_size = 2^13;
 
 elseif strcmp(benchName_,'soundnessbench') % 2025 submission settings
     options.nn.interval_center = true;
