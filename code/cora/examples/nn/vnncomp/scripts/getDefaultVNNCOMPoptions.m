@@ -127,10 +127,11 @@ elseif ismember(benchName_,{'monotonic_acasxu','isomorphic_acasxu'})
     options.nn.refinement_method = 'naive';
 
 elseif strcmp(benchName_,'safenlp')
+    % 2025 settings; neuron splits + relu constraints make unknowns hit the timeout
     options.nn.num_splits = 2;
     options.nn.num_dimensions = 1;
-    options.nn.num_neuron_splits = 1;
-    options.nn.num_relu_constraints = 100;
+    options.nn.num_neuron_splits = 0;
+    options.nn.num_relu_constraints = 0;
 
 elseif strcmp(benchName_,'soundnessbench') % 2025 submission settings
     options.nn.interval_center = true;
