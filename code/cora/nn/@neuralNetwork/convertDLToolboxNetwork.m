@@ -1,4 +1,4 @@
-function obj = convertDLToolboxNetwork(dlt_layers, verbose)
+function obj = convertDLToolboxNetwork(dlt_layers, varargin)
 % convertDLToolboxNetwork - converts a network from the Deep Learning
 %    Toolbox to a CORA neuralNetwork for verification
 %
@@ -32,17 +32,16 @@ function obj = convertDLToolboxNetwork(dlt_layers, verbose)
 
 % ------------------------------ BEGIN CODE -------------------------------
 
-if nargin < 2
-    verbose = false;
-end
+% Set default arguments.
+narginchk(1,3)
+[verbose, inputSize] = setDefaultValues({false, []}, varargin);
 
 if verbose
     disp("Converting Deep Learning Toolbox Model to neuralNetwork...")
 end
 
 % Initialize input size and current size.
-inputSize = [];
-currentSize = [];
+currentSize = inputSize;
 
 % Convert the layers in the nested cell array.
 [layers,inputSize,~] = aux_convertLayers(dlt_layers, ...
@@ -242,6 +241,11 @@ function [layers,inputSize,currentSize,nextInputIdx] = ...
         W = double(dlt_layer.Weights);
         b = double(reshape(dlt_layer.Bias, [], 1));
         padding = dlt_layer.PaddingSize;
+        if ~isempty(padding)
+            % Reorder the padding, i.e., [top bottom left right] -> [left
+            % top right bottom].
+            padding = padding([3 1 4 2]);
+        end
         stride = dlt_layer.Stride;
         dilation = dlt_layer.DilationFactor;
         layers{end+1} = nnConv2DLayer(W, b, padding, stride, dilation, dlt_layer.Name);

@@ -14,144 +14,150 @@ function options = getDefaultVNNCOMPoptions(benchName)
 
 % Authors:       Benedikt Kellner, Lukas Koller
 % Written:       04-May-2026
-% Last update:   11-June-2026 (BK, cifar100 to VNN-COMP'25 settings; tuned multi-network acasxu)
+% Last update:   ---
 % Last revision: ---
 
 % ------------------------------ BEGIN CODE -------------------------------
 
+% Create evaluation options.
 options.nn = struct(...
     'use_approx_error',true,...
-    'poly_method','bounds',... % {'bounds','singh','center'}
+    'poly_method','bounds',... {'bounds','singh','center'}
     'train',struct(...
-        'backprop',false,...
-        'mini_batch_size',2^10 ...
+    'backprop',false,...
+    'mini_batch_size',2^10 ...
     ) ...
 );
+% Set default training parameters
 options = nnHelper.validateNNoptions(options,true);
+% Disable the interval-center by default.
 options.nn.interval_center = false;
+% Use the moving statistics for the batch normalization.
 options.nn.batch_norm_moving_stats = true;
-options.nn.falsification_method = 'zonotack'; % {'center','fgsm','zonotack'}
-options.nn.refinement_method = 'zonotack';    % {'naive','zonotack'}
+
+% Specify falsification method: {'center','fgsm','zonotack'}.
+options.nn.falsification_method = 'zonotack';
+% Specify input set refinement method: {'naive','zonotack','zonotack-layerwise'}.
+options.nn.refinement_method = 'zonotack';
+% Set number of input generators.
 options.nn.train.num_init_gens = inf;
+% Set number of approximation error generators per layer.
 options.nn.approx_error_order = 'sensitivity*length';
-options.nn.conzonotope_bounding_method = 'dual-iter';
-options.nn.num_splits = 2;
-options.nn.num_dimensions = 1;
+% Compute the exact bounds of the constraint zonotope.
+options.nn.conzonotope_bounding_method = 'fourier-motzkin'; % {'fourier-motzkin','dual-iter','exact'}.
+options.nn.polytope_bound_approx_max_iter = 4; % only for 'fourier-motzkin'
+options.nn.conzonotope_bound_max_iter = 200; % only for 'dual-iter'
+options.nn.conzonotope_bound_step_size = 1e-2; % only for 'dual-iter'
+% Specify number of splits, dimensions, and neuron-splits.
+options.nn.num_pieces_per_split = 2;
+options.nn.num_input_dimension_splits = 1;
 options.nn.num_neuron_splits = 0;
+% Add relu tightening constraints.
 options.nn.num_relu_constraints = 0;
-options.nn.input_xor_neuron_splitting = true;
-options.nn.polytope_bound_approx_max_iter = 3;
+% Specify the number of iterations.
 options.nn.refinement_min_iter = 4;
 options.nn.refinement_max_iter = 8;
+% Specify the queue-style.
+options.nn.verify_dequeue_type = 'half-half';
+options.nn.verify_enqueue_type = 'prepend';
+
+% Specify the heuristics.
 options.nn.input_generator_heuristic = 'zono-norm-gradient';
 options.nn.input_split_heuristic = 'zono-norm-gradient';
 options.nn.neuron_split_heuristic = 'zono-norm-gradient';
 options.nn.relu_constraint_heuristic = 'zono-norm-gradient';
 
-% strip year suffix, e.g. 'acasxu_2023' -> 'acasxu', 'cgan2026' -> 'cgan'
-tok = regexp(benchName,'^(.+?)[_-]?(20\d{2})$','tokens');
-if ~isempty(tok)
-    benchName_ = tok{1}{1};
-else
-    benchName_ = benchName;
-end
-
 % benchmark-specific option overrides (VNN-COMP'25)
-if strcmp(benchName_,'cgan')
-    options.nn.use_dlconv = true;
-    options.nn.num_splits = 2;
+if strcmp(benchName,'acasxu')
+    % options.nn.num_pieces_per_split = 2;
+    % options.nn.num_input_dimension_splits = 0;
+    % options.nn.num_neuron_splits = 1;
+
+elseif strcmp(benchName,'cgan')
+    options.nn.num_pieces_per_split = 2;
     options.nn.num_dimensions = 1;
     options.nn.num_neuron_splits = 1;
     options.nn.train.mini_batch_size = 2^2;
-    % finite approx errors: inf OOMs on a 23GB A10G and triggers the
-    % batch-halving recovery on every instance
-    options.nn.train.num_approx_err = 500;
-    % 900s instance timeouts; iteration cap 100 quit with budget left
-    options.nn.max_verif_iter = 1000;
     options.nn.neuron_split_heuristic = 'least-unstable';
-    options.nn.exact_conzonotope_bounds = true;
     options.nn.verify_cascade_unsafe_set_constraints = false;
     options.nn.num_relu_constraints = 0;
 
-elseif strcmp(benchName_,'cifar100') % large image classification
-    % VNN-COMP'25 settings; 2026 retuning lost all sat instances
-    options.nn.interval_center = true;
-    options.nn.train.num_init_gens = 500;
-    options.nn.train.num_approx_err = 100;
-    options.nn.batch_union_conzonotope_bounds = false;
+elseif strcmp(benchName,'cifar100') % large image classification
+    options.nn.train.mini_batch_size = 8;
+    options.nn.input_split_heuristic = 'zono-norm-gradient';
+    options.nn.neuron_split_heuristic = 'least-unstable';
+    options.nn.refinement_method = 'zonotack';
+    options.nn.falsification_method = 'fgsm';
+    options.nn.num_input_dimension_splits = 0;
+    options.nn.num_pieces_per_split = 2;
+    options.nn.num_neuron_splits = 1;
+    options.nn.num_relu_constraints = 100;
+    options.nn.train.num_init_gens = 250;
+    options.nn.train.num_approx_err = 25;
+    options.nn.verify_dequeue_type = 'half-half';
+    options.nn.verify_enqueue_type = 'append';
 
-elseif strcmp(benchName_,'collins_rul_cnn') % VNN-COMP'24
+elseif strcmp(benchName,'collins_rul_cnn') % VNN-COMP'24
     options.nn.interval_center = true;
     options.nn.train.num_init_gens = inf;
     options.nn.train.num_approx_err = 100;
 
-elseif strcmp(benchName_,'cora')
+elseif strcmp(benchName,'cora')
     options.nn.num_relu_constraints = inf;
     options.nn.train.mini_batch_size = 2^5;
-    options.nn.num_splits = 2;
+    options.nn.num_pieces_per_split = 2;
     options.nn.num_dimensions = 1;
     options.nn.num_neuron_splits = 1;
     options.nn.batch_union_conzonotope_bounds = false;
 
-elseif strcmp(benchName_,'metaroom')
+elseif strcmp(benchName,'metaroom')
     options.nn.train.num_init_gens = 500;
     options.nn.train.num_approx_err = 100;
     options.nn.train.mini_batch_size = 2^2;
-    options.nn.num_splits = 2;
+    options.nn.num_pieces_per_split = 2;
     options.nn.num_dimensions = 1;
     options.nn.num_neuron_splits = 0;
     options.nn.num_relu_constraints = 0;
     options.nn.batch_union_conzonotope_bounds = false;
     options.nn.max_verif_iter = 10;
 
-elseif strcmp(benchName_,'mnist_fc') % VNN-COMP'22
+elseif strcmp(benchName,'mnist_fc') % VNN-COMP'22
     options.nn.interval_center = true;
     options.nn.train.num_init_gens = 500;
     options.nn.train.num_approx_err = 100;
     options.nn.batch_union_conzonotope_bounds = false;
 
-elseif strcmp(benchName_,'oval21')
+elseif strcmp(benchName,'oval21')
     options.nn.interval_center = true;
     options.nn.train.num_init_gens = 100;
     options.nn.train.num_approx_err = 10;
     options.nn.batch_union_conzonotope_bounds = false;
 
-elseif ismember(benchName_,{'monotonic_acasxu','isomorphic_acasxu'})
-    % VNN-COMP'26 multi-network ACAS Xu benchmarks (joint f+g, 5-in each).
-    % naive refinement clearly beats zonotack here; gradient heuristics
-    % beat input-radius despite the composite layer backprop.
-    options.nn.num_splits = 2;
+elseif ismember(benchName,{'monotonic_acasxu','isomorphic_acasxu'})
+    % VNN-COMP'26 multi-network ACAS Xu benchmarks.
+    % Small composite networks (joint f+g, 5-in each); use input-radius
+    % heuristics to avoid backprop through the composite layer.
+    options.nn.num_pieces_per_split = 2;
     options.nn.num_dimensions = 1;
     options.nn.num_neuron_splits = 0;
     options.nn.train.mini_batch_size = 2^10;
-    options.nn.refinement_method = 'naive';
 
-elseif strcmp(benchName_,'safenlp')
-    % 2025 lean settings; splitting/tightening raise per-instance cost and
-    % blow the time budget on 1080 instances
-    options.nn.num_splits = 2;
-    options.nn.num_dimensions = 1;
-    options.nn.num_neuron_splits = 0;
-    options.nn.num_relu_constraints = 0;
-
-elseif strcmp(benchName_,'soundnessbench') % 2025 submission settings
-    options.nn.interval_center = true;
-    options.nn.train.num_approx_err = 50;
-    options.nn.train.mini_batch_size = 2^5;
-    options.nn.num_splits = 2;
+elseif strcmp(benchName,'safenlp')
+    options.nn.num_pieces_per_split = 2;
     options.nn.num_dimensions = 1;
     options.nn.num_neuron_splits = 1;
+    options.nn.num_relu_constraints = 100;
 
-elseif strcmp(benchName_,'tinyimagenet') % 2025 settings (falsification)
+elseif strcmp(benchName,'tinyimagenet') % VNN-COMP'24
     options.nn.interval_center = true;
     options.nn.train.num_init_gens = 500;
-    options.nn.train.num_approx_err = 10;
+    options.nn.train.num_approx_err = 0;
     options.nn.num_relu_constraints = 0;
-    options.nn.num_splits = 2;
+    options.nn.num_pieces_per_split = 2;
     options.nn.num_dimensions = 1;
-    options.nn.num_neuron_splits = 0;
+    options.nn.num_neuron_splits = 1;
     options.nn.batch_union_conzonotope_bounds = false;
-    options.nn.train.mini_batch_size = 2^2;
+    options.nn.train.mini_batch_size = 2^5;
 
 end
 

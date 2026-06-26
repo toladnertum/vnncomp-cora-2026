@@ -19,7 +19,7 @@ function res = test_nn_neuralNetwork_verify_deterministic()
 
 % Authors:       Benedikt Kellner, Lukas Koller
 % Written:       12-March-2026
-% Last update:   11-June-2026 (BK, removed zonotack-layerwise refinement)
+% Last update:   ---
 % Last revision: ---
 
 % ------------------------------ BEGIN CODE -------------------------------
@@ -118,7 +118,7 @@ end
 % Test 7: All refinement methods on known-VERIFIED case
 % =========================================================================
 x = 0; r = 1; A = 1; b = 2; safeSet = true;
-refMethods = {'naive','zonotack'};
+refMethods = {'naive','zonotack','zonotack-layerwise'};
 for i = 1:length(refMethods)
     opts = options;
     opts.nn.refinement_method = refMethods{i};
@@ -150,13 +150,13 @@ end
 x = [0;0]; r = [0.5;0.5]; A = 1; b = 3; safeSet = true;
 
 splitConfigs = {
-    struct('num_splits',1,'num_dimensions',0,'num_neuron_splits',0, ...
+    struct('num_pieces_per_split',1,'num_input_dimension_splits',0,'num_neuron_splits',0, ...
            'input_xor_neuron_splitting',false,'add_orth_neuron_splits',false);
-    struct('num_splits',3,'num_dimensions',2,'num_neuron_splits',1, ...
+    struct('num_pieces_per_split',3,'num_input_dimension_splits',2,'num_neuron_splits',1, ...
            'input_xor_neuron_splitting',false,'add_orth_neuron_splits',false);
-    struct('num_splits',2,'num_dimensions',1,'num_neuron_splits',0, ...
+    struct('num_pieces_per_split',2,'num_input_dimension_splits',1,'num_neuron_splits',0, ...
            'input_xor_neuron_splitting',true,'add_orth_neuron_splits',false);
-    struct('num_splits',2,'num_dimensions',1,'num_neuron_splits',1, ...
+    struct('num_pieces_per_split',2,'num_input_dimension_splits',1,'num_neuron_splits',1, ...
            'input_xor_neuron_splitting',false,'add_orth_neuron_splits',true);
 };
 for i = 1:length(splitConfigs)
@@ -301,8 +301,8 @@ function options = aux_baselineOptions()
     % Use zonotack for both falsification and refinement by default.
     options.nn.falsification_method = 'zonotack';
     options.nn.refinement_method = 'zonotack';
-    options.nn.num_splits = 2;
-    options.nn.num_dimensions = 1;
+    options.nn.num_pieces_per_split = 2;
+    options.nn.num_input_dimension_splits = 1;
     options.nn.num_neuron_splits = 0;
 end
 

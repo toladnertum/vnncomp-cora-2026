@@ -46,8 +46,8 @@ function [res, x_, y_] = verify(nn, x, r, A, b, safeSet, varargin)
 narginchk(6,13);
 
 % Validate parameters.
-[options, timeout, verbose, plotDims, ~, A_in, b_in] = ...
-    setDefaultValues({struct, 100, false, [], false, [], []}, varargin);
+[options, timeout, verbose, plotDims, A_in, b_in] = ...
+    setDefaultValues({struct, 100, false, [], [], []}, varargin);
 plotting = ~isempty(plotDims);
 
 % Validate parameters.
@@ -64,18 +64,18 @@ inputArgsCheck({ ...
     })
 options = nnHelper.validateNNoptions(options,true);
 
-nSplits = options.nn.num_splits; % Number of input splits per dimension.
-nDims = options.nn.num_dimensions; % Number of input dimension to splits.
+nSplits = options.nn.num_pieces_per_split; % Number of input splits per dimension.
+nDims = options.nn.num_input_dimension_splits; % Number of input dimension to splits.
 nNeur = options.nn.num_neuron_splits; % Number of neurons to split.
 nReLU = options.nn.num_relu_constraints; % Number of ReLU constraints.
 
 if isinf(nReLU)
     % Compute the maximum number of ReLU constraints.
     nReLU = sum(cellfun(@(li) ...
-        isa(li,'nnReLULayer')*prod(li.getOutputSize(li.inputSize)), ...
-        nn.layers) ...
-        );
+        isa(li,'nnReLULayer')*prod(li.getOutputSize(li.inputSize)),nn.layers));
 end
+% Compute the number of new splits per queue entry after each iteration.
+newSplits = nSplits^nDims*nSplits^nNeur;
 
 % Extract parameters.
 bSz = options.nn.train.mini_batch_size;
@@ -86,10 +86,19 @@ n0 = size(x,1);
 nDims = min(nDims,n0);
 % Check the maximum number of input generators.
 numInitGens = min(options.nn.train.num_init_gens,n0);
+
+% Specify indices of layers for propagation.
+idxLayer = 1:length(nn.layers);
+% Enumerate the layers of the neural networks.
+[layers,~,~,~] = nn.enumerateLayers();
+
 % Obtain the maximum number of approximation errors in an activation layer.
 nk_max = max(cellfun(@(li) ...
-    isa(li,'nnActivationLayer')*prod(li.getOutputSize(li.inputSize)), ...
-    nn.layers));
+    isa(li,'nnActivationLayer')*prod(li.getOutputSize(li.inputSize)),layers));
+if isempty(nk_max)
+    % There are no activation layers.
+    nk_max = 0;
+end
 % We always have to use the approximation during set propagation to ensure
 % soundness.
 options.nn.use_approx_error = true;
@@ -97,11 +106,6 @@ options.nn.use_approx_error = true;
 % input dimensions.
 options.nn.interval_center = ...
     (options.nn.train.num_approx_err < nk_max) || (numInitGens < n0);
-
-% Specify indices of layers for propagation.
-idxLayer = 1:length(nn.layers);
-% Enumerate the layers of the neural networks.
-[layers,~,~,~] = nn.enumerateLayers();
 
 % To speed up computations and reduce GPU memory, we only use single
 % precision.
@@ -120,6 +124,10 @@ layers = aux_clearLayerFields(layers);
 A = cast(A,'like',inputDataClass);
 b = cast(b,'like',inputDataClass);
 
+% Move the input level constraints to the GPU.
+A_in = cast(A_in,'like',inputDataClass);
+b_in = cast(b_in,'like',inputDataClass);
+
 % In each layer, store ids of active generators and identity matrices
 % for fast adding of approximation errors.
 q = nn.prepareForZonoBatchEval(x,options,idxLayer);
@@ -128,6 +136,7 @@ q = nn.prepareForZonoBatchEval(x,options,idxLayer);
 xs = x;
 rs = r;
 nrXs = zeros([0 size(x,2)]);
+specBnds = []; % Store the specification bound per queue entry.
 % Compute number of union constraints (all intersection constrains ->
 % union of one single constraint).
 if safeSet > 1
@@ -146,7 +155,7 @@ x_ = [];
 y_ = [];
 
 % Initialize iteration stats.
-numVerified = 0;
+iterStats = struct('numVerified',0);
 % Initialize iteration counter.
 iter = 1;
 
@@ -154,12 +163,51 @@ iter = 1;
 batchVars = {'xi','ri','nrXi','S_','S','sens','cxi','Gxi',...
     'yic','yid','Gyi','ld_yi','ld_Gyi'};
 
+% Determine which progress metrics to display.
+progressMetrics = options.nn.progress_metrics;
+if n0 <= 5
+    % If the number of dimension is small, computing the volume works.
+    progressMetrics = [{'unknown_volume'}, progressMetrics];
+end
+
 if verbose
-    % Setup table.
-    table = CORAtable('double', ...
-        {'Iteration','#Queue','#Verified Branches','avg. Radius', ...
-        '~Unknown Vol. [%]'}, ...
-        {'d','d','d','.3e','.4f'});
+    % Build table columns from configured metrics.
+    colNames = {'Time','Iteration','#Queue','#Verified Branches'};
+    colFmts = {'time','d','d','d'};
+    % Iterate over the specified progress metrics and create corresponding table headers.
+    for i = 1:length(progressMetrics)
+        switch progressMetrics{i}
+            case 'unknown_volume'
+                % Compute the percentage of unknown volume.
+                colNames{end+1} = '~Unknown Vol. [%]';
+                colFmts{end+1} = '.4f';
+                % Pre-compute initial input volume for unknown volume metric.
+                iterStats.initialVol = sum(prod(2*r),'all');
+            case 'expansion_rate'
+                % Compute the ratio of split (new) and verifed batch entries.
+                colNames{end+1} = 'Expansion Rate';
+                colFmts{end+1} = '.4f';
+                % Initialize the expansion rate.
+                iterStats.expRate = inf;
+            case 'global_lower_bound'
+                % Compute a global lower bound w.r.t. to the specification, 
+                % i.e., for A*y <= b we compute max A*y - b accross all 
+                % batch entries.
+                if safeSet
+                    colNames{end+1} = 'Global Upper Bound';
+                    specBnds = inf;
+                else
+                    colNames{end+1} = 'Global Lower Bound';
+                    specBnds = -inf;
+                end
+                % Initialize the bound.
+                iterStats.globSpecBnd = NaN;
+                colFmts{end+1} = '.4e';
+        end
+    end
+    % Create the table.
+    table = CORAtable('double',colNames,colFmts);
+    % Print the table header.
     table.printHeader();
 end
 
@@ -186,7 +234,8 @@ heuristics = {inputGenHeuristic,inputSplitHeuristic,...
 
 % The sensitivity is used for selecting input generators, neuron
 % -splitting, and FGSM attacks.
-computeSens = ...
+computeSens = @(numApproxErr)...
+    any(strcmp('least-unstable',heuristics)) || ...
     any(strcmp('gap-sensitivity',heuristics)) || ...
     any(strcmp('product-sensitivity',heuristics)) || ...
     any(strcmp('centered-sensitivity',heuristics)) || ...
@@ -196,7 +245,7 @@ computeSens = ...
     any(strcmp('least-unstable',heuristics)) || ...
     strcmp(options.nn.falsification_method,'fgsm') || ...
     (strcmp(options.nn.approx_error_order,'sensitivity*length') ...
-    && (options.nn.train.num_approx_err < nk_max));
+    && (numApproxErr < nk_max));
 % Store the approximation error for heuristics computations.
 options.nn.store_approx_error = ...
     any(strcmp('most-sensitive-approx-error',heuristics));
@@ -233,23 +282,51 @@ while size(xs,2) > 0
         end
 
         if verbose
+            % Compute the queue length.
+            iterStats.queueLen = size(xs,2);
+            if isfield(iterStats,'initialVol')
+                % Compute the unknown volume. Each neuron split adds a
+                % beta-space constraint without shrinking the input box,
+                % so we multiply each branch's bbox volume by an
+                % nSplits^(-numNeuronSplits) feasibility-fraction proxy
+                % (1 for input-only runs since nrXs is empty/all-NaN).
+                numNeurSplits = sum(isfinite(nrXs),1);
+                iterStats.unknownVol = sum(prod(2*rs,1) ...
+                    .*nSplits.^(-numNeurSplits),'all');
+            end
+            if isfield(iterStats,'globSpecBnd')
+                % Update the global specification bound.
+                if safeSet
+                    iterStats.globSpecBnd = min(iterStats.globSpecBnd, ...
+                        max(specBnds));
+                else
+                    iterStats.globSpecBnd = max(iterStats.globSpecBnd, ...
+                        min(specBnds));
+                end
+            end
             % Print the iteration stats.
-            aux_printIterationStats(table,iter,xs,r,rs,numVerified);
+            aux_printIterationStats(table,iter,progressMetrics,iterStats);
         end
 
         % Pop next batch from the queue.
-        [xi,ri,nrXi,xs,rs,nrXs] = aux_pop(xs,rs,nrXs,bSz,options);
+        [xi,ri,nrXi,specBndi,xs,rs,nrXs,specBnds] = ...
+            aux_pop(xs,rs,nrXs,specBnds,bSz,options);
 
         % Move the batch to the GPU.
         xi = cast(xi,'like',inputDataClass);
         ri = cast(ri,'like',inputDataClass);
         nrXi = cast(nrXi,'like',inputDataClass);
 
+        if isfield(iterStats,'expRate')
+            % Update the expansion rate; store number of pop entries.
+            iterStats.expRate = size(xi,2);
+        end
+
         % 1. Verification -------------------------------------------------
         % 1.1. Compute all per-batch artifacts via the helper.
-        [~,~,~,~,~,ld_yi,ld_Gyi,ld_Gyi_err,~,~,~,~] = ...
+        [~,~,~,ld_yi,ld_Gyi,ld_Gyi_err,~,~,~,~] = ...
             aux_computeBatchArtifacts(nn,options,layers,idxLayer,xi,ri, ...
-            nrXi,A,b,q,numInitGens,inputGenHeuristic,computeSens);
+            nrXi,A,b,q,numInitGens,inputGenHeuristic,computeSens(options.nn.train.num_approx_err));
 
         % Compute the radius of the logit difference.
         ld_ri = sum(abs(ld_Gyi),2) + ld_Gyi_err;
@@ -258,32 +335,48 @@ while size(xs,2) > 0
             % safe iff all(A*y <= b) <--> unsafe iff any(A*y > b)
             % Thus, unknown if any(A*y > b).
             unknown = any(ld_yi + ld_ri(:,:) > b,1);
+            if ~isempty(specBndi)
+                % Update the bounds.
+                specBndi = max(ld_yi + ld_ri(:,:) - b,[],1);
+            end
         else
             % unsafe iff all(A*y <= b) <--> safe iff any(A*y > b)
             % Thus, unknown if all(A*y <= b).
             unknown = all(ld_yi - ld_ri(:,:) <= b,1);
+            if ~isempty(specBndi)
+                % Update the bounds.
+                specBndi = min(ld_yi - ld_ri(:,:) - b,[],1);
+            end
         end
 
         % Update counter for verified patches.
-        numVerified = numVerified + sum(~unknown,'all');
+        iterStats.numVerified = iterStats.numVerified + sum(~unknown,'all');
 
         if all(~unknown)
             % Verified all subsets of the current batch. We can skip to
             % next iteration.
             iter = iter + 1;
+
+            if isfield(iterStats,'expRate')
+                % Use stored number of pop entries to update the expansion rate.
+                iterStats.expRate = 0;
+            end
             continue;
         elseif any(~unknown)
             % Only keep un-verified batch entries.
             xi(:,~unknown) = [];
             ri(:,~unknown) = [];
             nrXi(:,~unknown) = [];
+            if ~isempty(specBndi)
+                specBndi(~unknown) = [];
+            end
         end
         clearvars('ld_yi')
 
         % Recompute all batch artifacts for the unverified entries.
-        [cxi,Gxi,inputDimIds,yi,Gyi,~,ld_Gyi,~,S,sens,grad,a] = aux_computeBatchArtifacts( ...
+        [cxi,Gxi,inputDimIds,~,ld_Gyi,~,S,sens,grad,a] = aux_computeBatchArtifacts( ...
             nn,options,layers,idxLayer,xi,ri,nrXi,A,b,q,numInitGens,inputGenHeuristic, ...
-            computeSens,computeGrads,nNeur,nReLU,nSplits);
+            computeSens(options.nn.train.num_approx_err),computeGrads,nNeur,nSplits);
         % Obtain the current batch size.
         [~,~,cbSz] = size(Gxi);
 
@@ -369,6 +462,9 @@ while size(xs,2) > 0
                 % The sets are not refined; split the input dimensions.
                 xis = xi;
                 ris = ri;
+                if ~isempty(specBndi)
+                    specBndis = specBndi;
+                end
                 % Store the indices of the split dimensions.
                 dimIds = NaN([0 cbSz],'like',xis);
                 for i=1:nDims
@@ -384,6 +480,13 @@ while size(xs,2) > 0
                     [xis,ris,dimId] = aux_split(xis,ris,his,nSplits);
                     % Append the split dimension.
                     dimIds = [repmat(dimIds,1,nSplits); dimId];
+                    % Replicate the specification bounds.
+                    if ~isempty(specBndi)
+                        specBndis = repmat(specBndis,1,nSplits);
+                    else
+                        % We do not track the specification bounds.
+                        specBndis = [];
+                    end
                     % Replicate sensitivity and criticallity value.
                     sens = repmat(sens,1,nSplits);
                     grad = repmat(grad,1,nSplits);
@@ -466,20 +569,17 @@ while size(xs,2) > 0
                 % Pad the neuron split indices with NaN for the input dimensions.
                 newNrXi = [newNrXi; NaN(size(Ai,[1 3]),'like',newNrXi)];
 
-                if nReLU > 0
-                    % Construct and reduce the aggregated relu constraints.
-                    [At,bt] = aux_extractAndReduceReluConstraints(a);
-                else
-                    % There are no general-split constraints.
-                    At = zeros([0 q cbSz],'like',inputDataClass);
-                    bt = zeros([0 cbSz],'like',inputDataClass);
-                    % nrReLUIdx = -ones([0 cbSz],'like',inputDataClass);
-                end
-
                 % Refine the input set based on the output specification.
                 [li,ui,nrXis] = aux_refineInputSet(nn,options,idxLayer, ...
-                    cxi,Gxi,yi,Gyi,A,b,numUnionConst,safeSet,As,bs, ...
-                    newNrXi,nrXi,At,bt,nReLU,A_in,b_in);
+                    cxi,Gxi,A_in,b_in,A,b,numUnionConst,safeSet,As,bs,newNrXi,nrXi,nReLU);
+
+                if ~isempty(specBndi)
+                    % Replicate the specification bounds for new splits.
+                    specBndis = repmat(specBndi,1,newSplits);
+                else
+                    % We do not track the specification bounds.
+                    specBndis = [];
+                end
 
                 % We enclose all unsafe outputs; therefore, a set is
                 % verified if it is empty. Identify empty sets. We also
@@ -490,6 +590,9 @@ while size(xs,2) > 0
                 li(:,isVerified) = [];
                 ui(:,isVerified) = [];
                 nrXis(:,isVerified) = [];
+                if ~isempty(specBndis)
+                    specBndis(:,isVerified) = [];
+                end
 
                 % Compute center and radius of refined sets.
                 xis = 1/2*(ui + li);
@@ -520,12 +623,17 @@ while size(xs,2) > 0
                 xis(:,isPoint) = [];
                 ris(:,isPoint) = [];
                 nrXis(:,isPoint) = [];
+                if ~isempty(specBndis)
+                    specBndis(:,isPoint) = [];
+                end
 
                 % All removed subproblems are verified, i.e., empty set or
                 % point sets.
-                numVerified = numVerified + sum(isVerified) + sum(isPoint);
+                iterStats.numVerified = iterStats.numVerified ...
+                    + sum(isVerified) + sum(isPoint);
                 % We have to subtract the number of dummy splits.
-                numVerified = numVerified - sum(isDummySplit);
+                iterStats.numVerified = iterStats.numVerified ...
+                    - sum(isDummySplit);
             otherwise
                 % Invalid option.
                 throw(CORAerror('CORA:wrongFieldValue', ...
@@ -533,8 +641,14 @@ while size(xs,2) > 0
                     {'naive','zonotack'}));
         end
 
+        if isfield(iterStats,'expRate')
+            % Use stored number of pop entries to update the expansion rate.
+            iterStats.expRate = size(xis,2)/iterStats.expRate;
+        end
+
         % Add new splits to the queue.
-        [xs,rs,nrXs] = aux_push(xis,ris,nrXis,xs,rs,nrXs,options);
+        [xs,rs,nrXs,specBnds] = ...
+            aux_push(xis,ris,nrXis,specBndis,xs,rs,nrXs,specBnds,options);
 
         % To save memory, we clear all variables that are no longer used.
         clear(batchVars{:});
@@ -596,12 +710,18 @@ while size(xs,2) > 0
                 rethrow(e);
             end
             % Append the current batch items.
-            [xs,rs,nrXs] = aux_push(xi,ri,nrXi,xs,rs,nrXs,options);
+            [xs,rs,nrXs,specBnds] = ...
+                aux_push(xi,ri,nrXi,specBndi,xs,rs,nrXs,specBnds,options);
 
             % Clear the batch variables.
             clear(batchVars{:});
             % Clear all batch variables in all layers.
             layers = aux_clearLayerFields(layers);
+
+            if isfield(iterStats,'expRate')
+                % Reset the expansion rate.
+                iterStats.expRate = inf;
+            end
         else
             fprintf('unexpected Error --- neuralNetwork/verify...\n');
             rethrow(e);
@@ -619,11 +739,24 @@ end
 % Store time.
 res.time = toc(timerVal);
 % Store number of verified patches.
-res.numVerified = gather(numVerified);
+res.numVerified = gather(iterStats.numVerified);
 
 if verbose
+    % Compute the queue length.
+    iterStats.queueLen = size(xs,2);
+    if isfield(iterStats,'initialVol')
+        % Compute the unknown volume (see per-iteration block for the
+        % neuron-split feasibility-fraction correction).
+        numNeurSplits = sum(isfinite(nrXs),1);
+        iterStats.unknownVol = sum(prod(2*rs,1) ...
+            .*nSplits.^(-numNeurSplits),'all');
+    end
+    if isfield(iterStats,'globSpecBnd')
+        % Update the global specification bound.
+        iterStats.globSpecBnd = 0;
+    end
     % Print the final stats.
-    aux_printIterationStats(table,iter,xs,r,rs,numVerified)
+    aux_printIterationStats(table,iter,progressMetrics,iterStats);
     % Print table footer.
     table.printFooter();
     % Print the result.
@@ -635,15 +768,15 @@ end
 
 % Auxiliary functions -----------------------------------------------------
 
-function [cxi,Gxi,inputDimIds,yi,Gyi,ld_yi,ld_Gyi,ld_Gyi_err,S,sens,grad,a] = ...
+function [cxi,Gxi,inputDimIds,ld_yi,ld_Gyi,ld_Gyi_err,S,sens,grad,a] = ...
     aux_computeBatchArtifacts(nn,options,layers,idxLayer,xi,ri,nrXi,...
     A,b,q,numInitGens,inputGenHeuristic,varargin)
 % Compute all per-batch verification artifacts (sensitivity, interval
 % gradient, input zonotope, forward propagation, logit difference) for
 % the current batch (xi,ri,nrXi).
 
-[computeSens,computeGrads,nNeur,nReLU,nSplits] = ...
-    setDefaultValues({false,false,0,0,1},varargin);
+[computeSens,computeGrads,nNeur,nSplits] = ...
+    setDefaultValues({false,false,0,1},varargin);
 
 % Obtain the current batch size.
 [n0,cbSz] = size(xi);
@@ -667,7 +800,7 @@ if ~isempty(nrXi)
     layers = aux_setLayerBoundsFromPreviousSplits(layers,nrXi);
 end
 
-% Compute and store the gradient that are required for computing the 
+% Compute and store the gradient that are required for computing the
 % heuristics.
 if computeGrads
     grad = aux_updateGradients(nn,options,idxLayer,cxi,Gxi,A,b,false,inputDimIds);
@@ -675,15 +808,11 @@ else
     grad = [];
 end
 
-% Forward propagation with optional aggregation for split/ReLU
-% constraints.
-if nNeur > 0 || nReLU > 0
-    % Add the function handles to aggregate neuron split and relu
-    % constrains.
+% Forward propagation with optional aggregation for split constraints.
+if nNeur > 0
+    % Add the function handles to aggregate neuron split constrains.
     options.nn.neuron_aggregation_fun = @(a,layeri,ci,Gi,co,Go) ...
-        aux_neuronConstraints(options,nNeur,nSplits,nrXi, ...
-        aux_reluConstraints(options,nReLU,nrXi,a,layeri,ci,Gi,co,Go), ...
-        layeri,ci,Gi);
+        aux_neuronConstraints(options,nNeur,nSplits,nrXi,a,layeri,ci,Gi);
     % Do the forward propagation.
     [yi,Gyi,a] = nn.evaluateZonotopeBatch_(cxi,Gxi,options,idxLayer);
 else
@@ -693,33 +822,29 @@ else
 end
 
 % Compute the logit difference.
-[ld_yi,ld_Gyi,ld_Gyi_err,~,~,Gyi] = ...
-    aux_computeLogitDifference(yi,Gyi,A,options);
+[ld_yi,ld_Gyi,ld_Gyi_err] = aux_computeLogitDifference(yi,Gyi,A,options);
 end
 
-function aux_printIterationStats(table,iter,xs,r,rs,numVerified)
-% Compute the length of the queue.
-queueLen = size(xs,2);
-% Compute the other stats.
-if ~isempty(rs)
-    % Compute the average radius.
-    avgRad = mean(rs,'all');
-    % Compute the ratio of the unknown input volume (assume intervals).
-    unknVol = sum(prod(2*rs,1),'all')/sum(prod(2*r),'all')*100;
-    % Compute the ratio of f-radii to approximate the volume of unknown
-    % input space.
-    % unknVol = sum(sqrt(sum(rs.^2,1)),'all')...
-    %         /sum(sqrt(sum(r.^2,1)),'all')*100;
-else
-    % The queue is empty; there are no stats.
-    avgRad = 0;
-    unknVol = 0;
+function aux_printIterationStats(table,iter,progressMetrics,iterStats)
+% Initialize the current row.
+row = {[],iter,iterStats.queueLen,iterStats.numVerified};
+% Compute the selected metrics.
+for i = 1:length(progressMetrics)
+    switch progressMetrics{i}
+        case 'unknown_volume'
+            % Compute the ratio of the unknown input volume (assume intervals).
+            row{end+1} = iterStats.unknownVol/iterStats.initialVol*100;
+        case 'expansion_rate'
+            row{end+1} = iterStats.expRate;
+        case 'global_lower_bound'
+            row{end+1} = iterStats.globSpecBnd;
+    end
 end
 % Print new table row.
-table.printContentRow({iter,queueLen,numVerified,avgRad,unknVol});
+table.printContentRow(row);
 end
 
-function [xi,ri,nrXi,xs,rs,nrXs,qIdx] = aux_pop(xs,rs,nrXs,bSz,options)
+function [xi,ri,nrXi,specBndi,xs,rs,nrXs,specBnds,qIdx] = aux_pop(xs,rs,nrXs,specBnds,bSz,options)
 % Obtain the number of elements in the queue.
 nQueue = size(xs,2);
 % Construct indices to pop.
@@ -735,7 +860,7 @@ switch options.nn.verify_dequeue_type
     otherwise
         % Invalid option.
         throw(CORAerror('CORA:wrongFieldValue', ...
-            'options.nn.verify_enqueue_type',{'append','prepend'}));
+            'options.nn.verify_dequeue_type',{'append','prepend'}));
 end
 % Pop centers.
 xi = xs(:,qIdx);
@@ -746,9 +871,18 @@ rs(:,qIdx) = [];
 % Pop indices for split neurons.
 nrXi = nrXs(:,qIdx);
 nrXs(:,qIdx) = [];
+
+if ~isempty(specBnds)
+    % Pop specification bounds.
+    specBndi = specBnds(qIdx);
+    specBnds(qIdx) = [];
+else
+    % We do not track the specification bounds.
+    specBndi = [];
+end
 end
 
-function [xs,rs,nrXs] = aux_push(xi,ri,nrXi,xs,rs,nrXs,options)
+function [xs,rs,nrXs,specBnds] = aux_push(xi,ri,nrXi,specBndi,xs,rs,nrXs,specBnds,options)
 % Try to remove irrelevant rows from the stored indices.
 nrXi = sort(nrXi,1,'descend'); % Move the NaN to the bottom.
 minNumNan = min(sum(isnan(nrXi),1)); % Identify the minimum number of NaN.
@@ -773,11 +907,13 @@ switch options.nn.verify_enqueue_type
         xs = [xs xi];
         rs = [rs ri];
         nrXs = [nrXs nrXi];
+        specBnds = [specBnds specBndi];
     case 'prepend'
         % Prepend the new entries.
         xs = [xi xs];
         rs = [ri rs];
         nrXs = [nrXi nrXs];
+        specBnds = [specBndi specBnds];
     otherwise
         % Invalid option.
         throw(CORAerror('CORA:wrongFieldValue', ...
@@ -821,9 +957,19 @@ else
     % Obtain the number of output dimensions and batch size.
     [nK,~,bSz] = size(Gy);
 
-    % Compute the gradient of the f-radius.
-    frad = sqrt(sum(Gy.^2,[1 2]));
-    gGy = Gy./(frad + 1e-6);
+    % Project generators onto specification directions so that the
+    % gradient captures which generators contribute most to the
+    % verification gap rather than the raw output size.
+    AGy = pagemtimes(A,Gy);  % [p, q, bSz]
+
+    % Compute specification-aware norm (L2 of projected generators).
+    frad = sqrt(sum(AGy.^2,[1 2]));  % [1, 1, bSz]
+
+    % Gradient of the specification-aware norm w.r.t. AGy.
+    gAGy = AGy./(frad + 1e-6);  % [p, q, bSz]
+
+    % Chain rule: gradient w.r.t. Gy is A' * gAGy.
+    gGy = pagemtimes(A',gAGy);  % [nK, q, bSz]
 
     % Compute a dummy center gradient.
     if options.nn.interval_center
@@ -832,11 +978,11 @@ else
         gcy = zeros([nK bSz],'like',Gy);
     end
 
-    % Compute gradient of the f-radius of the output set; the gradient
-    % is used to split the neuron in the network as well as input
-    % dimensions.
+    % Compute gradient of the specification-aware norm of the output
+    % set; the gradient is used to split neurons in the network as well
+    % as input dimensions.
     [~,grad] = nn.backpropZonotopeBatch_(gcy,gGy,options,idxLayer,false);
-        
+
     % Obtain the number of input generators.
     [numInitGens,~] = size(inputDimIds);
 
@@ -912,8 +1058,9 @@ if numInitGens >= n0
     % We create a generator for each input dimension.
     dimIdx = repmat((1:n0)',1,bSz);
 else
-    % Compute interval gradient for generator selection.
+    % Compute the interval gradient.
     if strcmp(heuristic,'zono-norm-gradient')
+        % Compure the gradient.
         grad = aux_updateGradients(nn,options,idxLayer,xi,ri,A,b,true,[]);
     else
         grad = [];
@@ -1072,6 +1219,14 @@ if isa(layeri,'nnActivationLayer')
         cr = 0;
     end
 
+    % Pad constraints to match the number of generators at this layer
+    % (later layers have extra generators from approximation errors).
+    [~,qi,~] = size(Gi);
+    [~,qc,~] = size(C);
+    if qc < qi
+        C = cat(2,C,zeros([size(C,1) qi-qc bSz],'like',C));
+    end
+
     % Construct a struct for the output set.
     uXi = struct('c',ci,'dr',cr,'G',Gi);
     % Apply the constraints.
@@ -1082,14 +1237,22 @@ if isa(layeri,'nnActivationLayer')
     [li,ui,~,~] = conZonotope.approximateBoundsWithGPU( ...
         uXi,numUnionConst,options);
 
-    % Set the bounds for the next propagation.
-    layeri.backprop.store.l_ = li;
-    layeri.backprop.store.u_ = ui;
+    % Intersect with existing stored bounds for the tightest result.
+    if isfield(layeri.backprop.store,'l') ...
+            && all(size(li) == size(layeri.backprop.store.l))
+        li = max(li,layeri.backprop.store.l);
+    end
+    if isfield(layeri.backprop.store,'u') ...
+            && all(size(ui) == size(layeri.backprop.store.u))
+        ui = min(ui,layeri.backprop.store.u);
+    end
+    % Store the bounds for the next propagation.
+    layeri.backprop.store.l = li;
+    layeri.backprop.store.u = ui;
 end
 end
 
-function [ld_yi,ld_Gyi,ld_Gyi_err,yic,yid,Gyi] = ...
-    aux_computeLogitDifference(yi,Gyi,A,options)
+function [ld_yi,ld_Gyi,ld_Gyi_err] = aux_computeLogitDifference(yi,Gyi,A,options)
 % Obtain number of output dimensions and batch size.
 [nK,~,bSz] = size(Gyi);
 
@@ -1130,30 +1293,19 @@ end
 % Set Refinement ----------------------------------------------------------
 
 function [l,u,nrXis] = aux_refineInputSet(nn,options,idxLayer, ...
-    x,Gx,y,Gy,A,b,numUnionConst,safeSet,As,bs,newNrXs,prevNrXs,At,bt,nReLU, ...
-    A_in,b_in)
+    x,Gx,A_in,b_in,A,b,numUnionConst,safeSet,As,bs,newNrXs,prevNrXs,nReLU)
 
 % Specify the maximum number of refinement iterations.
 maxRefIter = options.nn.refinement_max_iter;
 
-% Handle optional input-side linear constraints (A_in*x <= b_in).
-if nargin < 20, A_in = []; b_in = []; end
-
 % Obtain number of input dimensions, generators, and batchsize.
-n0 = size(x,1);
-[~,~,bSz] = size(Gy);
+[n0,q,bSz] = size(Gx);
 
 % Convert and join the general- & input-split constraints.
 [C,d,newSplits,nrSplitIdx] = aux_convertSplitConstraints(As,bs,newNrXs);
 
-if ~isempty(At) && ~isempty(bt)
-    % Replicate the ReLU constraints to match the batch size.
-    [bt,At] = aux_matchBatchSize(bt,At,bSz*newSplits);
-end
-
 % Replicate set for split constraints.
 [x,Gx] = aux_matchBatchSize(x,Gx,bSz*newSplits);
-[y,Gy] = aux_matchBatchSize(y,Gy,bSz*newSplits);
 % Update the batch size.
 bSz = bSz*newSplits;
 
@@ -1177,6 +1329,16 @@ layers = nn.enumerateLayers();
 if ~isempty(nrXis)
     % Set layer bounds based on previously split ReLU neurons.
     layers = aux_setLayerBoundsFromPreviousSplits(layers,nrXis);
+else
+    % Initialize empty previous neuron constraints.
+    Asp = [];
+    bsp = [];
+end
+
+% Initialize empty ReLU constraints.
+if nReLU == 0
+    At = [];
+    bt = [];
 end
 
 % Initialize scale and offset of the generators.
@@ -1195,45 +1357,76 @@ isEmpty = zeros([1 bSz],'logical');
 % Iteratively refine the input set to enclose only the unsafe outputs.
 while refIter < maxRefIter
 
-    % Construct the unsafe input set.
-    uXi = aux_constructUnsafeInputSet(options,x,Gx,qiIds,y,Gy,A,b, ...
-        safeSet,numUnionConst);
-
+    % Tighten enclosure by setting bounds in intermediate activation
+    % layers and aggregating ReLU constraints.
     if ~isempty(C)
         % Scale and offset constraints with current hypercube.
         [d,C] = aux_scaleAndOffsetZonotope(d,C,-bc,br);
 
-        % Append split constraints.
-        uXi.A = [uXi.A; C];
-        uXi.b = [uXi.b; d];
-
-        if ~isempty(At) && ~isempty(bt)
-            % Scale and offset constraints with current hypercube.
-            [bt,At] = aux_scaleAndOffsetZonotope(bt,At,-bc,br);
-            % Append the ReLU tightening constraints.
-            uXi.A = [uXi.A; At];
-            uXi.b = [uXi.b; bt];
+        % Set up aggregation to tighten activation layer bounds
+        % using the constrained zonotope bounding method.
+        options.nn.neuron_aggregation_fun = @(a,layeri,ci,Gi,co,Go) ...
+            a; % aux_updateLayerBounds(options,numUnionConst,C,d,a,layeri,ci,Gi);
+        if nReLU > 0
+            % Add the function handle to aggregate relu constrains.
+            options.nn.neuron_aggregation_fun = @(a,layeri,ci,Gi,co,Go) ...
+                options.nn.neuron_aggregation_fun(...
+                aux_reluConstraints(options,nReLU,nrXis,a,layeri,ci,Gi,co,Go),layeri,ci,Gi,co,Go);
         end
+        if ~isempty(nrXis)
+            % Add the function handle to reconstruct neuron split constraints.
+            options.nn.neuron_aggregation_fun = @(a,layeri,ci,Gi,co,Go) ...
+                options.nn.neuron_aggregation_fun(...
+                aux_reconstructNeurConstraints(options,nrXis,a,layeri,ci,Gi,co,Go), ...
+                layeri,ci,Gi,co,Go);
+        end
+        % Set the tightend bounds in each layer.
+        [~,~,a] = nn.evaluateZonotopeBatch_(x,Gx,options,idxLayer);
+
+        if nReLU > 0
+            % Construct and reduce the aggregated relu constraints.
+            [At,bt] = aux_extractAndReduceReluConstraints(a);
+        end
+        if ~isempty(nrXis)
+            % Extract and append the reconstructed neuron constraints.
+            Asp = permute(a.Asp,[2 1 3]);
+            bsp = a.bsp;
+        end
+
+        % Remove the aggregation function to avoid interference
+        % with subsequent evaluations.
+        options.nn = rmfield(options.nn,'neuron_aggregation_fun');
     end
 
-    % Inject input-side polytope constraints: A_in*(xc+Gx*beta) <= b_in.
-    if ~isempty(A_in)
-        qGx  = size(Gx,2);
-        bSzG = size(Gx,3);
-        if options.nn.interval_center && ndims(x) > 2
-            xc_ = reshape(1/2*(x(:,2,:) + x(:,1,:)),[n0 bSzG]);
-        else
-            xc_ = x;
-        end
-        A_in_s = cast(A_in,'like',Gx);
-        b_in_s = cast(b_in,'like',Gx);
-        pIn  = size(A_in_s,1);
-        % (p_in × n0) * (n0 × q×bSzG) -> (p_in × q × bSzG)
-        C_in = reshape(A_in_s * reshape(Gx,[n0, qGx*bSzG]),[pIn, qGx, bSzG]);
-        % (p_in × 1) broadcast against (p_in × bSzG) -> (p_in × bSzG)
-        d_in = b_in_s - A_in_s * xc_;
-        uXi.A = [uXi.A; C_in];
-        uXi.b = [uXi.b; d_in];
+    % Compute a new output enclosure with tightend layer bounds.
+    [y,Gy] = nn.evaluateZonotopeBatch_(x,Gx,options,idxLayer);
+
+    % Construct the unsafe input set.
+    uXi = aux_constructUnsafeInputSet(options,x,Gx,qiIds,y,Gy,A,b, ...
+        safeSet,numUnionConst);
+    % Append split constraints.
+    uXi.A = [uXi.A; C];
+    uXi.b = [uXi.b; d];
+
+    if ~isempty(At) && ~isempty(bt)
+        % Append the ReLU tightening constraints.
+        uXi.A = [uXi.A; At];
+        uXi.b = [uXi.b; bt];
+    end
+    if ~isempty(Asp) && ~isempty(bsp)
+        % Append the neuron constraints for previous splits.
+        uXi.A = [uXi.A; Asp];
+        uXi.b = [uXi.b; bsp];
+    end
+
+    % Append the input level constraints.
+    if ~isempty(A_in) && ~isempty(b_in)
+        % Re-use the implementation to compute the constrained input set.
+        cX = aux_constructUnsafeInputSet(options,x,Gx,qiIds, ...
+          x,Gx,A_in,b_in,false,1);
+        % Extract the constraint on the factor space of the input set.
+        uXi.A = [uXi.A; cX.A];
+        uXi.b = [uXi.b; cX.b];
     end
 
     % Compute the bounds of the unsafe inputs (hypercube).
@@ -1251,11 +1444,6 @@ while refIter < maxRefIter
 
     % Increment the refinement iteration counter.
     refIter = refIter + 1;
-
-    if refIter < maxRefIter
-        % Compute a new output enclosure.
-        [y,Gy] = nn.evaluateZonotopeBatch_(x,Gx,options,idxLayer);
-    end
 end
 
 % Compute bounds of the refined input set.
@@ -1295,8 +1483,7 @@ else
 end
 
 % Compute the output constraints.
-[ld_yi,ld_Gyi,ld_Gyi_err,~,~,~] = ...
-    aux_computeLogitDifference(y,Gy,A,options);
+[ld_yi,ld_Gyi,ld_Gyi_err] = aux_computeLogitDifference(y,Gy,A,options);
 % Compute output constraints.
 if safeSet
     % safe iff all(A*y <= b) ...
@@ -1334,8 +1521,10 @@ br_ = permute(br(qiIds,:),[3 1 2]);
 % Scale and offset the zonotope to a new hypercube with center bic and
 % radius bir.
 offset = pagemtimes(G_,bc_);
+% Identify if c is an interval center (iff options.nn.interval_center).
+intervalCenter = size(c,3) > 1 || (size(c,2) == 2 && size(G,3) == 1);
 % Offset the center.
-if ndims(c) > 2 % iff options.nn.interval_center
+if intervalCenter
     c = c + offset;
 else
     c = c + offset(:,:);
@@ -1367,14 +1556,14 @@ if ~isempty(As)
     % Duplicate the indices for the split neurons.
     nrSplitIdx = repelem(nrXis,2,1);
 
-    % Scale the constraints; -1 for upper bound and 1 for lower bound.
+    % Scale the constraints; 1 for upper bound and -1 for lower bound.
     As_ = repmat(constrSign,ps,1).*As_;
     % Duplicate the constraint for the new splits.
     A_ = permute(repelem(As_,1,1,1,newSplits),[2 1 4 3]);
 
     % Mark unused bounds by NaN.
     bs_ = cat(2,NaN(ps,1,bSz),bs_,cat(2,NaN(ps,1,bSz)));
-    % Scale the offsets; -1 for upper bound and 1 for lower bound.
+    % Scale the offsets; 1 for upper bound and -1 for lower bound.
     bs_ = repmat(constrSign',1,pcs+1).*bs_;
     % Reshape and combine the lower and upper bounds.
     bs_ = reshape(permute(reshape(permute(bs_,[4 2 1 3]), ...
@@ -1398,7 +1587,7 @@ if ~isempty(As)
     % Compute the neuron indices of each constraint. Then we can track
     % from which neuron the constraint stems; to extract the exact
     % bounds of the set.
-    % Scale the indices; -1 for upper bound and 1 for lower bound.
+    % Scale the indices; 1 for upper bound and -1 for lower bound.
     nrSplitIdx = repmat(constrSign,ps,1).*nrSplitIdx;
     % Duplicate the indices for the new splits.
     nrSplitIdx = repelem(nrSplitIdx,1,newSplits);
@@ -1450,8 +1639,9 @@ ri_(dimIdx) = ri_(dimIdx)/nSplits;
 
 xis = repmat(xi_,1,1,nSplits);
 ris = repmat(ri_,1,1,nSplits);
-% Offset the center.
-xis(linIdx(:)) = xis(linIdx(:)) + (2*splitsIdx(:) - 1).*ris(linIdx(:));
+% Offset the center. 
+xis(linIdx(:)) = reshape(xis(linIdx(:)),[],1) ...
+    + (2*splitsIdx(:) - 1).*reshape(ris(linIdx(:)),[],1);
 
 % Flatten.
 xis = xis(:,:);
@@ -1506,16 +1696,7 @@ er = aux_sliceToBatch(er,bSz);
 % Obtain the sensitivity for heuristic.
 if ~isempty(layeri.sensitivity)
     Si_ = max(abs(layeri.sensitivity),1e-6);
-    % When cbSz==1 MATLAB stores sensitivity as 2-D [nK,ni]; size(.,3)==1.
-    % Slice or replicate to match the current bSz.
-    if size(Si_,3) > bSz
-        Si_ = Si_(:,:,1:bSz);
-    elseif size(Si_,3) < bSz
-        Si_ = repmat(Si_,[1 1 ceil(bSz/size(Si_,3))]);
-        Si_ = Si_(:,:,1:bSz);
-    end
-    % Max over output dimensions and flatten to [ni, bSz].
-    sens = reshape(max(Si_,[],1),ni,bSz);
+    sens = reshape(max(Si_,[],1),size(Si_,2:3));
 else
     sens = [];
 end
@@ -1591,8 +1772,11 @@ if isa(layeri,'nnActivationLayer')
         aux_extractLayerFieldsForHeuristicComputation(layeri,ni,bSz);
     % Extract the heuristic for splitting neurons.
     heuristic = options.nn.neuron_split_heuristic;
-    % Compute the heuristic.
-    hi = nnHelper.computeHeuristic(heuristic,li,ui,er,sens,grad,prevNrXs,neuronIds);
+    % Compute the heuristic. The generator rows Gi are the split
+    % hyperplanes in the beta-space; they are passed to (optionally)
+    % diversify the splits w.r.t. previously split neurons.
+    hi = nnHelper.computeHeuristic(heuristic,li,ui,er,sens,grad, ...
+        prevNrXs,neuronIds,true,true,Gi,options.nn.neuron_split_diversity);
 
     % Create new constraints, i.e., Asi*beta<=bsi.
     Ai = Gi;
@@ -1708,6 +1892,75 @@ if isa(layeri,'nnActivationLayer')
 end
 end
 
+function a = aux_reconstructNeurConstraints(options,prevNrXs,a,layeri,ci,Gi,co,Go)
+% Reconstruct the neuron split constraints from stored indices.
+
+% Obtain the number of dimensions, number of generators, and batch
+% size.
+[ni,qi,bSz] = size(Gi);
+
+% Obtain the number of split constraints.
+[p,~] = size(prevNrXs);
+
+% Initialize the aggregation result and cache split-index invariants
+% (these do not change across layers or refinement iterations).
+if ~isfield(a,'Asp') || ~isfield(a,'bsp')
+    a.Asp = zeros([qi p bSz],'like',ci);
+    a.bsp = zeros([p bSz],'like',ci);
+    a.prevAbs = abs(prevNrXs);
+    a.prevPos = prevNrXs > 0;
+    a.prevNeg = prevNrXs < 0;
+end
+
+if ~isa(layeri,'nnActivationLayer')
+    return;
+end
+
+% Obtain the indices of the neurons of the current layer.
+neuronIds = layeri.neuronIds';
+
+% Most layers do not host any split neuron.
+if ~any(ismember(a.prevAbs(:),neuronIds))
+    return;
+end
+
+% Compute the match mask once and reuse for pos/neg splits.
+prevAbs_ = permute(a.prevAbs,[3 1 2]); % [1 p bSz]
+match = (neuronIds == prevAbs_); % [ni p bSz]
+posMask = match & permute(a.prevPos,[3 1 2]);
+negMask = match & permute(a.prevNeg,[3 1 2]);
+% Compute the masks for the individual constraints.
+posDimIds = reshape(any(posMask,2),[ni bSz]);
+negDimIds = reshape(any(negMask,2),[ni bSz]);
+posConstrIds = reshape(any(posMask,1),[p bSz]);
+negConstrIds = reshape(any(negMask,1),[p bSz]);
+
+% Check if the layer contains any neuron split; otherwise, we can skip this layer.
+hasPos = any(posConstrIds,'all');
+hasNeg = any(negConstrIds,'all');
+if ~hasPos && ~hasNeg
+    return;
+end
+
+% Permute Go lazily (only when there is actually work to do).
+Gi_ = permute(Gi,[2 1 3]);
+% Compute output-center bounds only when needed.
+[~,~,ci_l,ci_u] = aux_computeBoundsOfZonotope(ci,Gi,options);
+
+if hasPos
+    % A positive index represents an upper bound of 0, i.e., x <= 0.
+    % x_j = ci_j + Gi_j*\beta <= 0  <-->  Gi_j*\beta <= -ci_j
+    a.Asp(:,posConstrIds) = Gi_(:,posDimIds);
+    a.bsp(posConstrIds) = -ci_l(posDimIds);
+end
+if hasNeg
+    % A negative index represents a lower bound of 0, i.e., -x <= 0 <--> x >= 0.
+    % x_j = ci_j + Gi_j*\beta >= 0  <-->  -Gi_j*\beta <= ci_j
+    a.Asp(:,negConstrIds) = -Gi_(:,negDimIds);
+    a.bsp(negConstrIds) = ci_u(negDimIds);
+end
+end
+
 function [At,bt] = aux_extractAndReduceReluConstraints(a)
 % Create tightening constraints for the ReLU enclosures.
 
@@ -1751,23 +2004,28 @@ end
 
 function [A,b,h,idx] = aux_extractTopKConstraints(k,A1,b1,h1,A2,b2,h2)
 % Given two set of constraints with heuristic values, we select the top
-% k.
+% k. 
 
 % Concatenate the constraints.
 A = [A1; A2];
 b = [b1; b2];
 
-% Obtain the number of dimensions and batch size.
-[~,q,bSz] = size(A);
+% Obtain the number of constraints, dimensions, and batch size.
+[m,q,bSz] = size(A);
 % Obtain the number of splits.
 [~,s,~] = size(b);
 
+% Concatenate the heuristic values.
+hAll = [h1; h2];
+
 % Sort the heuristic to identify the best constraints.
-[h,ids] = sort([h1; h2],1,'descend');
+[h,ids] = sort(hAll,1,'descend');
 % Only keep the constraints for the top neurons.
 h = h(1:k,:);
+ids = ids(1:k,:);
+
 % Obtain the indices for the relevant constraints.
-idx = sub2ind(size(A,[1 3]),ids(1:k,:),repmat(1:bSz,k,1));
+idx = sub2ind(size(A,[1 3]),ids,repmat(1:bSz,k,1));
 
 % Use indexing to extract the selected constraints.
 A = permute(A,[2 1 3]);

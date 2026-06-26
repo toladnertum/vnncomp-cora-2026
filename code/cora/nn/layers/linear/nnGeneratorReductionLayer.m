@@ -64,7 +64,8 @@ methods  (Access = {?nnLayer, ?neuralNetwork})
         G(GdIdx) = I;
 
         % Store the indices of the reduced generators.
-        if options.nn.train.backprop
+        if options.nn.train.backprop || ...
+                (obj.storeInputForBackpropWithoutWeightUpdate() && options.nn.backprop_without_weight_update)
             obj.backprop.store.keepGensIdx = keepGensIdx;
             obj.backprop.store.reduceGensIdx = reduceGensIdx;
             obj.backprop.store.GdIdx = GdIdx;

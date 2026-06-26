@@ -202,8 +202,15 @@ methods (Access = {?nnLayer, ?neuralNetwork})
         [nGrad,q,batchSize] = size(gG);
 
         if options.nn.interval_center
-            cl = reshape(c(:,1,:),[nIn batchSize]);
-            cu = reshape(c(:,2,:),[nIn batchSize]);
+            % Extract bounds; the input center can be empty if the weights
+            % are not updated.
+            if ~isempty(c)
+                cl = reshape(c(:,1,:),[nIn batchSize]);
+                cu = reshape(c(:,2,:),[nIn batchSize]);
+            else
+                cl = [];
+                cu = [];
+            end
             gl = reshape(gc(:,1,:),[nGrad batchSize]);
             gu = reshape(gc(:,2,:),[nGrad batchSize]);
 

@@ -227,82 +227,82 @@ fprintf('Results saved to: %s\n',resultspath);
 
 % Plotting is best-effort: never abort a long sweep on a render failure.
 try
-plotspath = fullfile(resultspath,'plots');
-mkdir(plotspath);
+    plotspath = fullfile(resultspath,'plots');
+    mkdir(plotspath);
 
-fontSize = 11;
+    fontSize = 11;
 
-% Figure 1: Stacked bar chart of verified/falsified/unknown per config.
-f1 = figure('Name','Verification Results');
-barData = [numVerifAll, numFalsAll, numUnknownAll];
-b = bar(barData,'stacked');
-b(1).FaceColor = [0.2 0.7 0.3]; % verified = green
-b(2).FaceColor = [0.9 0.3 0.2]; % falsified = red
-b(3).FaceColor = [0.6 0.6 0.6]; % unknown = gray
-set(gca,'XTickLabel',configLabels,'XTickLabelRotation',45,'FontSize',fontSize);
-ylabel('Number of Instances');
-legend({'Verified','Falsified','Unknown'},'Location','best');
-title('Verification Results per Configuration');
-grid on;
+    % Figure 1: Stacked bar chart of verified/falsified/unknown per config.
+    f1 = figure('Name','Verification Results');
+    barData = [numVerifAll, numFalsAll, numUnknownAll];
+    b = bar(barData,'stacked');
+    b(1).FaceColor = [0.2 0.7 0.3]; % verified = green
+    b(2).FaceColor = [0.9 0.3 0.2]; % falsified = red
+    b(3).FaceColor = [0.6 0.6 0.6]; % unknown = gray
+    set(gca,'XTickLabel',configLabels,'XTickLabelRotation',45,'FontSize',fontSize);
+    ylabel('Number of Instances');
+    legend({'Verified','Falsified','Unknown'},'Location','best');
+    title('Verification Results per Configuration');
+    grid on;
 
-% Figure 2: Solved percentage per config.
-f2 = figure('Name','Solved Rate');
-totalAll = numVerifAll + numFalsAll + numUnknownAll;
-solvedPct = (numVerifAll + numFalsAll) ./ max(totalAll,1) * 100;
-bar(solvedPct,'FaceColor',[0.2 0.5 0.8]);
-set(gca,'XTickLabel',configLabels,'XTickLabelRotation',45,'FontSize',fontSize);
-ylabel('Solved [%]');
-ylim([0 100]);
-title('Solved Rate per Configuration');
-grid on;
+    % Figure 2: Solved percentage per config.
+    f2 = figure('Name','Solved Rate');
+    totalAll = numVerifAll + numFalsAll + numUnknownAll;
+    solvedPct = (numVerifAll + numFalsAll) ./ max(totalAll,1) * 100;
+    bar(solvedPct,'FaceColor',[0.2 0.5 0.8]);
+    set(gca,'XTickLabel',configLabels,'XTickLabelRotation',45,'FontSize',fontSize);
+    ylabel('Solved [%]');
+    ylim([0 100]);
+    title('Solved Rate per Configuration');
+    grid on;
 
-% Figure 3: Total verification time per config.
-f3 = figure('Name','Total Time');
-bar(totalTimeAll,'FaceColor',[0.8 0.5 0.2]);
-set(gca,'XTickLabel',configLabels,'XTickLabelRotation',45,'FontSize',fontSize);
-ylabel('Total Time [s]');
-title('Total Verification Time per Configuration');
-grid on;
+    % Figure 3: Total verification time per config.
+    f3 = figure('Name','Total Time');
+    bar(totalTimeAll,'FaceColor',[0.8 0.5 0.2]);
+    set(gca,'XTickLabel',configLabels,'XTickLabelRotation',45,'FontSize',fontSize);
+    ylabel('Total Time [s]');
+    title('Total Verification Time per Configuration');
+    grid on;
 
-% Figure 4: Cumulative solved over time.
-f4 = figure('Name','Cumulative Solved');
-hold on;
-colors = lines(numCombinations);
-legendEntries = {};
-for c = 1:numCombinations
-    T = allResults{c};
-    if isempty(T)
-        continue;
+    % Figure 4: Cumulative solved over time.
+    f4 = figure('Name','Cumulative Solved');
+    hold on;
+    colors = lines(numCombinations);
+    legendEntries = {};
+    for c = 1:numCombinations
+        T = allResults{c};
+        if isempty(T)
+            continue;
+        end
+        isSolved = strcmp(T.results,'unsat') | strcmp(T.results,'sat');
+        if ~any(isSolved)
+            continue;
+        end
+        solvedTimes = sort(T.verifTimes(isSolved));
+        cumSolved = (1:length(solvedTimes))';
+        solvedTimes = [0; solvedTimes];
+        cumSolved = [0; cumSolved];
+        stairs(solvedTimes,cumSolved,'Color',colors(c,:),'LineWidth',1.5);
+        legendEntries{end+1} = configLabels{c};
     end
-    isSolved = strcmp(T.results,'unsat') | strcmp(T.results,'sat');
-    if ~any(isSolved)
-        continue;
+    % Format axes and legend.
+    hold off;
+    set(gca,'FontSize',fontSize);
+    xlabel('Time [s]');
+    ylabel('Cumulative Solved Instances');
+    if ~isempty(legendEntries)
+        legend(legendEntries,'Location','southeast');
     end
-    solvedTimes = sort(T.verifTimes(isSolved));
-    cumSolved = (1:length(solvedTimes))';
-    solvedTimes = [0; solvedTimes];
-    cumSolved = [0; cumSolved];
-    stairs(solvedTimes,cumSolved,'Color',colors(c,:),'LineWidth',1.5);
-    legendEntries{end+1} = configLabels{c};
-end
-% Format axes and legend.
-hold off;
-set(gca,'FontSize',fontSize);
-xlabel('Time [s]');
-ylabel('Cumulative Solved Instances');
-if ~isempty(legendEntries)
-    legend(legendEntries,'Location','southeast');
-end
-title('Cumulative Solved Instances over Time');
-grid on;
+    title('Cumulative Solved Instances over Time');
+    grid on;
 
-% Save .fig files and close figures to free memory.
-saveas(f1,fullfile(plotspath,'verification_results.fig'));
-saveas(f2,fullfile(plotspath,'solved_rate.fig'));
-saveas(f3,fullfile(plotspath,'total_time.fig'));
-saveas(f4,fullfile(plotspath,'cumulative_solved.fig'));
-close([f1 f2 f3 f4]);
-fprintf('Plots saved to: %s\n',plotspath);
+    % Save .fig files and close figures to free memory.
+    saveas(f1,fullfile(plotspath,'verification_results.fig'));
+    saveas(f2,fullfile(plotspath,'solved_rate.fig'));
+    saveas(f3,fullfile(plotspath,'total_time.fig'));
+    saveas(f4,fullfile(plotspath,'cumulative_solved.fig'));
+    close([f1 f2 f3 f4]);
+    fprintf('Plots saved to: %s\n',plotspath);
 catch plotErr
     fprintf('WARNING: Plot generation failed: %s\n',plotErr.message);
 end

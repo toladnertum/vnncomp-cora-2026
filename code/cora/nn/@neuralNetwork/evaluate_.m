@@ -70,7 +70,8 @@ function r = aux_evaluateNumeric(obj, input, options, idxLayer)
         options.nn.layer_k = k;
         layer_k = obj.layers{k};
         % Store input for backpropgation
-        if options.nn.train.backprop
+        if options.nn.train.backprop || ...
+                (layer_k.storeInputForBackpropWithoutWeightUpdate() && options.nn.backprop_without_weight_update)
             layer_k.backprop.store.input = r;
         end
         r = layer_k.evaluateNumeric(r, options);
@@ -87,7 +88,7 @@ function r = aux_evaluateInterval(obj, input, options, idxLayer)
         layer_k = obj.layers{k};
         % Store input for backpropgation
         if options.nn.train.backprop || ...
-                (isa(layer_k,'nnActivationLayer') && options.nn.backprop_without_weight_update)
+                (layer_k.storeInputForBackpropWithoutWeightUpdate() && options.nn.backprop_without_weight_update)
             layer_k.backprop.store.input = r;
         end
         r = layer_k.evaluateInterval(r, options);

@@ -40,17 +40,19 @@ function res = prepare_instance(benchName,modelPath,vnnlibPath,varargin)
 % ------------------------------ BEGIN CODE -------------------------------
 
 [verbose,options] = setDefaultValues({true,[]},varargin);
-if isempty(options)
-    options = getDefaultVNNCOMPoptions(benchName);
-end
-
-% Fill in any missing required fields without overwriting paramGrid values.
-options = nnHelper.validateNNoptions(options,true);
-% Always override GPU detection — not a hyperparameter.
-options.nn.train.use_gpu = aux_isGPUavailable();
 
 % Parse the benchmark name.
 [benchName_,~] = aux_parseBenchmarkName(benchName);
+
+% Retrieve the default options, if no options where passed.
+if isempty(options)
+    options = getDefaultVNNCOMPoptions(benchName_);
+else
+    % Fill in any missing required fields without overwriting paramGrid values.
+    options = nnHelper.validateNNoptions(options,true);
+    % Always override GPU detection — not a hyperparameter.
+    options.nn.train.use_gpu = aux_isGPUavailable();
+end
 
 if verbose
     fprintf('prepare_instance(%s,%s,%s)...\n',benchName,modelPath, ...
@@ -125,8 +127,11 @@ end
 % Auxiliary functions -----------------------------------------------------
 
 function [nn,permuteDims] = aux_loadNetwork(benchName,modelPath,vnnlibPath,verbose)
+
+% By default we do not need to permute the spacial dimensions of inputs.
 permuteDims = false;
-% model name needed for nn4sys instance filtering
+
+% Extract the model name.
 [~,modelName,~] = getInstanceFilename(benchName,modelPath,vnnlibPath);
 
 % Resolve .gz compressed ONNX (2026 benchmarks store compressed files).
@@ -142,7 +147,6 @@ if strcmp(benchName,'test') ...
 
 elseif strcmp(benchName,'acasxu')
     nn = neuralNetwork.readONNXNetwork(modelPath,verbose,'BSSC');
-
 elseif strcmp(benchName,'cctsdb_yolo')
     throw(CORAerror('CORA:notSupported',...
         sprintf("Benchmark '%s' not supported!",benchName)));
@@ -179,7 +183,6 @@ elseif strcmp(benchName,'collins_yolo_robustness') % not supported
 
 elseif strcmp(benchName,'cora')
     nn = neuralNetwork.readONNXNetwork(modelPath,verbose,'BC');
-
 elseif strcmp(benchName,'dist_shift')
     nn = neuralNetwork.readONNXNetwork(modelPath,verbose,'BC');
 
@@ -255,7 +258,7 @@ elseif strcmp(benchName,'yolo') % not supported
     throw(CORAerror('CORA:notSupported',...
         sprintf("Benchmark '%s' not supported!",benchName)));
 
-% VNN-COMP'22 Benchmarks ------------------------------------------------
+    % VNN-COMP'22 Benchmarks ------------------------------------------------
 elseif strcmp(benchName,'mnist_fc')
     nn = neuralNetwork.readONNXNetwork(modelPath,verbose,'SSC');
 
@@ -296,6 +299,7 @@ end
 end
 
 function gpu = aux_isGPUavailable()
+% Check if the GPU is available.
 try
     if ~isempty(which('gpuDeviceCount'))
         gpu = gpuDeviceCount('available') > 0;
@@ -314,6 +318,7 @@ if ~isempty(tok)
     name = tok{1}{1};
     year = tok{1}{2};
 else
+    % We could not find the year. It might already have been striped.
     name = str;
     year = '';
 end
@@ -406,14 +411,50 @@ table.printContentRow('Falsification Method', ...
     options.nn.falsification_method);
 table.printContentRow('Refinement Method', ...
     options.nn.refinement_method);
-table.printContentRow('Num. of Splits', ...
-    string(options.nn.num_splits));
-table.printContentRow('Num. of Dimensions', ...
-    string(options.nn.num_dimensions));
-table.printContentRow('Num. of Neuron-Splits', ...
+table.printContentRow('max Verification Iterations', ...
+    string(options.nn.max_verif_iter));
+% ConZonotope bounding options.
+table.printContentRow('ConZonotope Bounding Method', ...
+    options.nn.conzonotope_bounding_method);
+table.printContentRow('ConZonotope Bound max. Iteration (''dual-iter'')', ...
+    string(options.nn.conzonotope_bound_max_iter));
+table.printContentRow('ConZonotope Bound Step Size (''dual-iter'')', ...
+    string(options.nn.conzonotope_bound_step_size));
+table.printContentRow('Polytope Bound Approx max Iteration (''fourier-motzkin'')', ...
+    string(options.nn.polytope_bound_approx_max_iter));
+table.printContentRow('Batch Union ConZonotope Bounds', ...
+    string(options.nn.batch_union_conzonotope_bounds));
+% Splitting hyperparameters.
+table.printContentRow('Num. of Pieces per Split', ...
+    string(options.nn.num_pieces_per_split));
+table.printContentRow('Num. of Input Dimension Splits', ...
+    string(options.nn.num_input_dimension_splits));
+table.printContentRow('Num. of Neuron Splits', ...
     string(options.nn.num_neuron_splits));
 table.printContentRow('Num. of ReLU-Tightening Constraints', ...
     string(options.nn.num_relu_constraints));
+% Refinement iterations.
+table.printContentRow('Refinement min. Iteration', ...
+    string(options.nn.refinement_min_iter));
+table.printContentRow('Refinement max. Iteration', ...
+    string(options.nn.refinement_max_iter));
+% Heuristics.
+table.printContentRow('Input Generator Heuristic', ...
+    options.nn.input_generator_heuristic);
+table.printContentRow('Input Split Heuristic', ...
+    options.nn.input_split_heuristic);
+table.printContentRow('Neuron Split Heuristic', ...
+    options.nn.neuron_split_heuristic);
+table.printContentRow('ReLU Constraint Heuristic', ...
+    options.nn.relu_constraint_heuristic);
+% Optional benchmark-specific options.
+table.printContentRow('Use dlconv', ...
+    string(options.nn.use_dlconv));
+table.printContentRow('Dequeue Type', ...
+    options.nn.verify_dequeue_type);
+table.printContentRow('Enqueue Type', ...
+    options.nn.verify_enqueue_type);
+% Finish table.
 table.printFooter();
 end
 

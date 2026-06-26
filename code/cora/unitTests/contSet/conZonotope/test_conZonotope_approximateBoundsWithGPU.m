@@ -58,7 +58,7 @@ options.nn.polytope_bound_approx_max_iter = 8;
 
 options.nn.conzonotope_bounding_method = 'dual-iter';
 options.nn.conzonotope_bound_max_iter = 1000;
-options.nn.conzonotope_bound_step_size = 1; 
+options.nn.conzonotope_bound_step_size = 1e-1; 
 [lD,uD,blD,buD] = conZonotope.approximateBoundsWithGPU(cZs,numUnionConst,options);
 
 % Compute the exact bounds.

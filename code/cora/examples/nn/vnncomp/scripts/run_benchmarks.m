@@ -1,4 +1,4 @@
-function run_benchmarks(benchmarks,datapath,resultspath,options,instanceIds,timeoutMultiplier,preferredVersion)
+function run_benchmarks(benchmarks,datapath,resultspath,varargin)
 % run_benchmarks - run all benchmarks.
 %
 % Syntax:
@@ -40,23 +40,10 @@ function run_benchmarks(benchmarks,datapath,resultspath,options,instanceIds,time
 
 % ------------------------------ BEGIN CODE -------------------------------
 
-% Default: no explicit options (each benchmark loads its own defaults).
-if nargin < 4
-    options = [];
-end
-% Default: run all instances.
-if nargin < 5
-    instanceIds = [];
-end
-if nargin < 6 || isempty(timeoutMultiplier)
-    timeoutMultiplier = 1.0;
-end
-% Default: prefer the 1.0 format (counterexamples are validated there).
-if nargin < 7 || isempty(preferredVersion)
-    preferredVersion = '1.0';
-end
-
 % Run all benchmarks in the current directory.
+
+% Set default arguments.
+[options,instanceIds,timeoutMultiplier,preferredVersion] = setDefaultValues({[],[],1,'1.0'},varargin);
 
 % Restrict number of CPU threads.
 maxNumCompThreads(4);
@@ -146,15 +133,9 @@ for i=1:length(benchdirs)
             end
         end
     end
-    % Resolve options for this benchmark: use provided options or load defaults.
-    if isempty(options)
-        benchOptions = getDefaultVNNCOMPoptions(benchnamei);
-    else
-        benchOptions = options;
-    end
     % Run all instances of the benchmark.
     [numVerif,numFals,numUnknown] = ...
-        run_instances(benchnamei,benchresultpath,benchOptions,instanceIds,timeoutMultiplier);
+        run_instances(benchnamei,benchresultpath,varargin{:});
     % Compute total number of instances.
     totalNum = numVerif + numFals + numUnknown;
     % Print summary.

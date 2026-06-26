@@ -92,7 +92,7 @@ if options.nn.use_approx_error
     switch options.nn.approx_error_order
         case 'length'
             % Use the dimensions with the largest intervals.
-            [~,dDims] = sort(1/2*(eu - el),1,'descend');
+            [~,eDims] = sort(1/2*(eu - el),1,'descend');
         case 'sensitivity*length'
             % Use the most sensitive dimensions with the largest intervals.
 
@@ -117,23 +117,23 @@ if options.nn.use_approx_error
             % Obtains sensitivity matrix and sum across outputs.
             S = reshape(sum(abs(obj.sensitivity),1),[n bSz]);
             % Find dimensions with the hightest heuristic.
-            [~,dDims] = sort(1/2*(eu - el).*S,1,'descend');
+            [~,eDims] = sort(1/2*(eu - el).*S,1,'descend');
         case 'random'
             % Select random dimensions.
-            [~,dDims] = sort(rand([n bSz],'like',c),1);
+            [~,eDims] = sort(rand([n bSz],'like',c),1);
         case 'sequential'
             % Enumerate the dimensions sequentially.
-            dDims = repmat((1:n)',1,bSz);
+            eDims = repmat((1:n)',1,bSz);
         otherwise
     end
-    % Compute the indices into for the considered approximation errors.
-    dDimsIdx = reshape(sub2ind([n bSz],dDims, ...
-        repmat(1:bSz,n,1)),size(dDims));
-    % Extract the indices for approximation errors.
-    dDimsIdx = dDimsIdx(1:dn,:);
+    % Compute the linear indices for all dimensions (sorted by heuristic).
+    allDimsIdx = reshape(sub2ind([n bSz],eDims, ...
+        repmat(1:bSz,n,1)),size(eDims));
+    % Extract the indices for the considered approximation errors.
+    eDimsIdx = allDimsIdx(1:dn,:);
     % The remaining indices are for the approximation errors that are not
-    % considered.
-    notdDimsIdx = dDimsIdx(dn+1:end,:);
+    % stored in the generator matrix but added to the interval center.
+    noteDimsIdx = allDimsIdx(dn+1:end,:);
     % If there are considered approximation errors we add them into the
     % generator matrix.
     if dn > 0
@@ -147,12 +147,12 @@ if options.nn.use_approx_error
         % Compute indices for approximation errors into the generator
         % matrix.
         GdIdx = reshape(sub2ind(size(G), ...
-           reshape(dDims(1:dn,:),1,[]),...
+           reshape(eDims(1:dn,:),1,[]),...
            repmat(approxErrGenIds,1,bSz), ...
            repelem(1:bSz,1,dn)),[dn bSz]);
 
         % Compute the considered approximation errors.
-        d = 1/2*(eu(dDimsIdx) - el(dDimsIdx));
+        d = 1/2*(eu(eDimsIdx) - el(eDimsIdx));
         % Use the computed indices to write the approximation errors into 
         % the correct generators.
         G(GdIdx) = d;
@@ -167,13 +167,13 @@ if options.nn.interval_center
     % er = 1/2*(eu - el);
     % The offset is only applied to dimensions for which the approximation
     % error is stored in the generator matrix.
-    offset(notdDimsIdx) = 0;
+    offset(noteDimsIdx) = 0;
     % Set the considered approximation errors to 0; only the remaining
     % approximation error are added to the center interval.
     dcl = el;
-    dcl(dDimsIdx) = 0;
+    dcl(eDimsIdx) = 0;
     dcu = eu;
-    dcu(dDimsIdx) = 0;
+    dcu(eDimsIdx) = 0;
     % The center store the remaining approximation errors.
     c_min = min(m.*cl, m.*cu);
     c_max = max(m.*cl, m.*cu);
@@ -185,7 +185,7 @@ else
 end
 
 % Store the approximation erros.
-if options.nn.store_approx_error ...
+if options.nn.use_approx_error ...
         || options.nn.backprop_without_weight_update ...
         || options.nn.train.backprop
     obj.backprop.store.el = el;
@@ -196,25 +196,31 @@ end
 if options.nn.backprop_without_weight_update || options.nn.train.backprop
     % Store the slope.
     obj.backprop.store.coeffs = m;
-    % Store the approximation erros.
-    obj.backprop.store.el = el;
-    obj.backprop.store.eu = eu;
-    obj.backprop.store.dDimsIdx = dDimsIdx;
-    obj.backprop.store.notdDimsIdx = notdDimsIdx;
-    obj.backprop.store.el_l = el_l;
-    obj.backprop.store.eu_l = eu_l;
-    obj.backprop.store.el_u = el_u;
-    obj.backprop.store.eu_u = eu_u;
     % The flag exact_backprop toggles the exact backpropagation through the
     % image enclosure. For that we have to store additional gradients.
     if options.nn.train.exact_backprop
         % Store the gradient of the slope w.r.t. the input bounds l and u.
         obj.backprop.store.m_l = m_l;
         obj.backprop.store.m_u = m_u;
-        % Store the gradients of the approximation errors w.r.t. the input
-        % bounds l and u; additionally, store index information.
+        % Store the dimension indices (all n rows; first dn are approx.
+        % error dims, remaining are added to the interval center).
+        obj.backprop.store.eDims = eDims;
+        % Store gradients of the approximation errors w.r.t. the input
+        % bounds l and u (only at the approx. error dimensions).
+        obj.backprop.store.el_l = el_l(eDimsIdx);
+        obj.backprop.store.eu_l = eu_l(eDimsIdx);
+        obj.backprop.store.el_u = el_u(eDimsIdx);
+        obj.backprop.store.eu_u = eu_u(eDimsIdx);
+        if options.nn.interval_center
+            % Store remaining gradients needed for interval center backprop.
+            obj.backprop.store.el_l_notE = el_l(noteDimsIdx);
+            obj.backprop.store.el_u_notE = el_u(noteDimsIdx);
+            obj.backprop.store.eu_l_notE = eu_l(noteDimsIdx);
+            obj.backprop.store.eu_u_notE = eu_u(noteDimsIdx);
+        end
+        % Store the gradients of the approximation errors w.r.t. the
+        % slope; additionally, store index information.
         if options.nn.use_approx_error
-            % obj.backprop.store.GdIdx = GdIdx;
             obj.backprop.store.el_m = el_m;
             obj.backprop.store.eu_m = eu_m;
         end

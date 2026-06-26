@@ -127,7 +127,7 @@ try
     end
 
     % Convert any safe set to a union of unsafe sets.
-    specs = aux_safeSet2UnionUnsafeSets(specs);
+    % specs = aux_safeSet2UnionUnsafeSets(specs);
 
     prepTimer = tic;
     if length(specs) > 1
@@ -222,7 +222,7 @@ try
                 remTimeout = timeout - toc(totalTime);
                 % Do verification.
                 [res,x_,y_] = nn.verify(x,r,A,b,numUnionConstraints, ...
-                    options,remTimeout,verbose,[],false,A_in,b_in);
+                    options,remTimeout,verbose,[],A_in,b_in);
                 % Add the number of verified branches.
                 numVerified = numVerified + res.numVerified;
                 break;

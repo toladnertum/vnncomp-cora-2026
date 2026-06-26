@@ -91,6 +91,16 @@ methods
         [out_h, out_w, out_c] = obj.aux_computeOutputSize(obj.W, inImgSize);
         outputSize = [out_h, out_w, out_c];
     end
+
+    function outputSize = computeSizes(obj, inputSize)
+        % Call the super function.
+        outputSize = obj.computeSizes@nnLayer(inputSize);
+        % Check that the input size has two spacial dimensions and a
+        % channel dimension.
+        if length(obj.inputSize) < 3
+            obj.inputSize = [obj.inputSize ones(3 - length(obj.inputSize))];
+        end
+    end
 end
 
 % evaluate ------------------------------------------------------------
@@ -134,15 +144,16 @@ methods  (Access = {?nnLayer, ?neuralNetwork})
     % sensitivity
     function S = evaluateSensitivity(obj, S, options)
         obj.checkInputSize()
-        % Obtain the stored input.
-        x = obj.backprop.store.input;
+        
+        % Get the number of dimensions.
+        n = prod(obj.inputSize);
 
         % Use deep learning tool box.
         [vK,vk,batchSize] = size(S);
         S = permute(S,[2 1 3]);
         S = reshape(S,[vk vK*batchSize]);
         S = obj.transconv2d(S,options,'sparseIdx',obj.W,[]);
-        S = reshape(S,[size(x,1) vK batchSize]);
+        S = reshape(S,[n vK batchSize]);
         S = permute(S,[2 1 3]);
 
         % % compute weight and bias
@@ -235,7 +246,14 @@ methods  (Access = {?nnLayer, ?neuralNetwork})
 methods (Access = {?nnLayer, ?neuralNetwork})
     % backprop ------------------------------------------------------------
 
-    function grad_in = backpropNumeric(obj, input, grad_out, options, updateWeights)   
+    function storeInput = storeInputForBackpropWithoutWeightUpdate(obj)
+        % The input is only required to update the weights; thus, we do
+        % not need to store the input for computing the gradients without
+        % a weight update.
+        storeInput = false;
+    end
+
+    function grad_in = backpropNumeric(obj, input, grad_out, options, updateWeights)
         if updateWeights
             % Compute weight update.
             dW = convForWeigthsUpdate(obj,grad_out,input,options);
@@ -316,8 +334,13 @@ methods (Access = {?nnLayer, ?neuralNetwork})
 
         if options.nn.interval_center
             % Extract bounds.
-            cl = reshape(c(:,1,:),[nIn batchSize]);
-            cu = reshape(c(:,2,:),[nIn batchSize]);
+            if ~isempty(c)
+                cl = reshape(c(:,1,:),[nIn batchSize]);
+                cu = reshape(c(:,2,:),[nIn batchSize]);
+            else
+                cl = [];
+                cu = [];
+            end
             % Extract gradient for the bounds.
             gl = reshape(gc(:,1,:),[nGrad batchSize]);
             gu = reshape(gc(:,2,:),[nGrad batchSize]);

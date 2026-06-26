@@ -79,21 +79,21 @@ for i = 1:length(polyMethods)
     assertLoop(isempty(x_) & isempty(y_),i);
 end
 
-% --- num_splits ----------------------------------------------------------
+% --- num_pieces_per_split ----------------------------------------------------------
 numSplitsVals = [1, 2, 3];
 for i = 1:length(numSplitsVals)
     opts = opts1;
-    opts.nn.num_splits = numSplitsVals(i);
+    opts.nn.num_pieces_per_split = numSplitsVals(i);
     [verifRes,x_,y_] = nn1.verify(x1,r1,A1,b1,safeSet1,opts,timeout,verbose);
     assertLoop(~strcmp(verifRes.str,'COUNTEREXAMPLE'),i);
     assertLoop(isempty(x_) & isempty(y_),i);
 end
 
-% --- num_dimensions ------------------------------------------------------
+% --- num_input_dimension_splits ------------------------------------------------------
 numDimsVals = [0, 1, 2];
 for i = 1:length(numDimsVals)
     opts = opts1;
-    opts.nn.num_dimensions = numDimsVals(i);
+    opts.nn.num_input_dimension_splits = numDimsVals(i);
     [verifRes,x_,y_] = nn1.verify(x1,r1,A1,b1,safeSet1,opts,timeout,verbose);
     assertLoop(~strcmp(verifRes.str,'COUNTEREXAMPLE'),i);
     assertLoop(isempty(x_) & isempty(y_),i);
@@ -268,8 +268,8 @@ function [nn,options,x,r,A,b,safeSet] = ...
   % Use zonotack baseline.
   options.nn.falsification_method = 'zonotack';
   options.nn.refinement_method = 'zonotack';
-  options.nn.num_splits = 2;
-  options.nn.num_dimensions = 1;
+  options.nn.num_pieces_per_split = 2;
+  options.nn.num_input_dimension_splits = 1;
   options.nn.num_neuron_splits = 0;
 
   % Read the neural network.

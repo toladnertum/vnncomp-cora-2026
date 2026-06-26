@@ -28,12 +28,6 @@ PAPER_TITLE = 'CORA'; % !
 VENUE_NAME = 'VNN-COMP';   % !
 aux_runStartup(PAPER_TITLE,VENUE_NAME);
 
-% hyperparameter overrides (empty struct = use benchmark defaults)
-overrides = struct();
-
-% instance indices to run (empty = all instances)
-instanceIds = [];
-
 % also change 3. Scripts below
 
 % 2. SETUP (nothing to change here) ---------------------------------------
@@ -97,7 +91,7 @@ benchmarks = {...
 };
 
 scripts = { ...
-    @() run_benchmarks(benchmarks,datapath,resultspath,overrides,instanceIds), 'run_benchmarks';
+    @() run_benchmarks(benchmarks,datapath,resultspath),'run_benchmarks';
 };
 
 % run scripts

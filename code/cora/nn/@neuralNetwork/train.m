@@ -364,7 +364,7 @@ for epoch=1:maxEpoch % epoch
             % disable backpropagation and batch norm computation
             options.nn.train.backprop = false;
             options.nn.interval_center = false;
-            options.nn.batch_norm_stats = 'calc_stats';
+            options.nn.batch_norm_stats = 'moving_stats';
             % Loop index.
             k = 1;
             for j=1:miniBatchSize:max(1,valN - mod(valN,miniBatchSize))
@@ -401,6 +401,9 @@ for epoch=1:maxEpoch % epoch
             else
                 numNonDecrVal = numNonDecrVal + 1;
             end
+
+            % Set batch norm layers back to training mode.
+            options.nn.batch_norm_stats = 'calc_stats';
         end
 
         % Print loss of current training iteration

@@ -149,6 +149,13 @@ methods  (Access = {?nnLayer, ?neuralNetwork})
 
     % backprop ------------------------------------------------------------
 
+    function storeInput = storeInputForBackpropWithoutWeightUpdate(obj)
+        % The input is only required to update the weights; thus, we do
+        % not need to store the input for computing the gradients without
+        % a weight update.
+        storeInput = false;
+    end
+
     % numeric
     function grad_in = backpropNumeric(obj, input, grad_out, options, updateWeights)
         if updateWeights
@@ -195,11 +202,14 @@ methods  (Access = {?nnLayer, ?neuralNetwork})
         % Obtain the scale and offset.
         [scale,offset] = obj.aux_getScaleAndOffset();
         if options.nn.interval_center
-            % Swap the center and center gradients if the scale is negative.
-            c(scale < 0,:,:) = c(scale < 0,[2 1],:);
+            % Swap the center gradients if the scale is negative.
             gc(scale < 0,:,:) = gc(scale < 0,[2 1],:);
         end
         if updateWeights
+            if options.nn.interval_center && ~isempty(c)
+                % Swap the center if the scale is negative.
+                c(scale < 0,:,:) = c(scale < 0,[2 1],:);
+            end
             % Update scale and offset.
             dscale = obj.aux_aggrGradOfParam(size(obj.scale), ...
                 sum(gc.*c,2:3) + sum(gG.*G,2:3));

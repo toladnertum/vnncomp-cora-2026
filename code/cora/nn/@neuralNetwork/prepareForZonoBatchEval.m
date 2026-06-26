@@ -67,6 +67,9 @@ function [genIds,neuronId,numGen,numNeurons] = aux_prepareLayers( ...
         if isa(layeri,'nnCompositeLayer')
             % Store number generators of the input
             layeri.genIds = genIds;
+            % Number of neurons at the input to the composite layer; each
+            % computation path starts from this same input.
+            inNumNeurons = numNeurons;
             % Store new generators from the different computation paths.
             newGenIds = [];
             for j=1:length(layeri.layers)
@@ -74,6 +77,10 @@ function [genIds,neuronId,numGen,numNeurons] = aux_prepareLayers( ...
                 layersij = layeri.layers{j};
                 % Store active generator for the current computation path.
                 genIdsij = genIds;
+                % Each computation path starts from the composite layer's
+                % input; reset the neuron count to the input size (the
+                % previous path may have left a different neuron count).
+                numNeurons = inNumNeurons;
                 % Iterate over the layers of the current computation path.
                 idxLayerij = 1:length(layersij);
                 [genIdsij,neuronId,numGen,numNeurons] = aux_prepareLayers( ...
@@ -84,6 +91,12 @@ function [genIds,neuronId,numGen,numNeurons] = aux_prepareLayers( ...
             end
             % Add new generators to active generators.
             genIds = [genIds newGenIds];
+            % The number of neurons at the output of the composite layer
+            % depends on the aggregation (e.g. 'concat' sums the path
+            % outputs). Use the layer's own output size instead of the last
+            % path's neuron count, so that subsequent layers reserve the
+            % correct number of approximation-error generators.
+            [~,numNeurons] = layeri.getNumNeurons();
         else
             % Prepare the current layer and update the number of generators and
             % neurons.

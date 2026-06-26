@@ -114,6 +114,12 @@ methods (Access = {?nnLayer, ?neuralNetwork})
 
     % backprop ------------------------------------------------------------
 
+    function storeInput = storeInputForBackpropWithoutWeightUpdate(obj)
+        % Reshaping only depends on the input size, not the input values;
+        % thus, the input is not required to compute the gradients.
+        storeInput = false;
+    end
+
     % numeric
     function grad_in = backpropNumeric(obj, input, grad_out, options, updateWeights)
         inSize = obj.inputSize;

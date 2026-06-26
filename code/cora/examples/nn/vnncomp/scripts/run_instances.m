@@ -1,4 +1,4 @@
-function [numVerif,numFals,numUnknown] = run_instances(benchname,resultsPath,options,instanceIds,timeoutMultiplier)
+function [numVerif,numFals,numUnknown] = run_instances(benchname,resultsPath,varargin)
 % run_instances - run all instances of a benchmark.
 %
 % Syntax:
@@ -37,13 +37,8 @@ function [numVerif,numFals,numUnknown] = run_instances(benchname,resultsPath,opt
 
 % ------------------------------ BEGIN CODE -------------------------------
 
-% When no options provided, load benchmark defaults.
-if nargin < 3 || isempty(options)
-    options = getDefaultVNNCOMPoptions(benchname);
-end
-if nargin < 5 || isempty(timeoutMultiplier)
-    timeoutMultiplier = 1.0;
-end
+% Set default parameters.
+[options,instanceIds,timeoutMultiplier] = setDefaultValues({[],[],1},varargin);
 
 % Run all instances found in the current directory.
 verbose = true;
@@ -55,6 +50,10 @@ instances = readtable(filename,'Delimiter',',');
 instances.Properties.VariableNames = {'model','vnnlib','timeout'};
 % Obtain number of instances.
 N = size(instances,1);
+% Use all instances if not specified.
+if isempty(instanceIds)
+    instanceIds = 1:N;
+end
 
 % Init results.
 benchnames = {};
@@ -73,11 +72,6 @@ numUnknown = 0;
 
 % Count number of patches needed to verify an instance.
 numVerifPatches = 0;
-
-% Use all instances if not specified.
-if nargin < 4 || isempty(instanceIds)
-    instanceIds = 1:N;
-end
 
 for i=instanceIds
     fprintf('__________________________________________________________________\n');

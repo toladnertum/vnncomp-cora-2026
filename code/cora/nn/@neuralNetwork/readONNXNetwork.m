@@ -15,6 +15,7 @@ function obj = readONNXNetwork(file_path, varargin)
 %    targetNetwork - ...
 %    containsCompositeLayers - there are residual connections in the
 %    network
+%    inputSize - shape of the input
 %
 % Outputs:
 %    obj - generated object
@@ -37,10 +38,10 @@ function obj = readONNXNetwork(file_path, varargin)
 % ------------------------------ BEGIN CODE -------------------------------
 
 % validate parameters
-narginchk(1,6)
+narginchk(1,7)
 [verbose, inputDataFormats, outputDataFormats, targetNetwork, ...
-    containsCompositeLayers] = setDefaultValues({false, 'BC', 'BC', ...
-        'dagnetwork', false}, varargin);
+    containsCompositeLayers, inputSize] = setDefaultValues({false, 'BC', 'BC', ...
+        'dagnetwork', false, []}, varargin);
 
 % valid in-/outputDataFormats for importONNXNetwork
 validDataFormats = {'','BC','BCSS','BSSC','CSS','SSC','BCSSS','BSSSC', ...
@@ -88,7 +89,7 @@ end
 
 % convert DLT network to CORA network
 % obj = neuralNetwork.convertDLToolboxNetwork(dlt_net.Layers, verbose);
-obj = neuralNetwork.convertDLToolboxNetwork(layers, verbose);
+obj = neuralNetwork.convertDLToolboxNetwork(layers, verbose, inputSize);
 
 end
 

@@ -42,10 +42,10 @@ narginchk(2,5);
 options = nnHelper.validateNNoptions(options);
 
 % Enable backpropagation to store the inputs to each layer.
-options.nn.train.backprop = true;
+options.nn.backprop_without_weight_update = true;
 
 % Do a forward propagation to store the inputs.
-y = obj.evaluate(x,options,idxLayer);
+y = obj.evaluate_(x,options,idxLayer);
 % Obtain number of output dimensions and batch size.
 [nK,bSz] = size(y);
 

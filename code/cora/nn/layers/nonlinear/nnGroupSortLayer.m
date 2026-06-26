@@ -82,7 +82,8 @@ methods (Access = {?nnLayer, ?neuralNetwork})
         % Trim the padded dimensions.
         r = r(1:n,:);
         
-        if isfield(options,'nn') && options.nn.train.backprop
+        if isfield(options,'nn') && (options.nn.train.backprop || ...
+                (obj.storeInputForBackpropWithoutWeightUpdate() && options.nn.backprop_without_weight_update))
             % Compute permutation indices.
             idx_ = sub2ind([obj.groupSize numGroups_ bSz],idx_, ...
                 repelem(1:numGroups_,obj.groupSize,1,bSz), ...

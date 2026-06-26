@@ -174,7 +174,7 @@ methods (Static)
     obj = importFromStruct(nnStruct);
     
     % convert
-    obj = convertDLToolboxNetwork(dltoolbox_layers, verbose)
+    obj = convertDLToolboxNetwork(dltoolbox_layers, varargin)
     obj = getFromCellArray(W, b, actFun)
 end
 

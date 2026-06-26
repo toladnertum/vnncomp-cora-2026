@@ -195,7 +195,7 @@ for i=1:length(numIterations)
     fprintf('Computing bounds ("%s") ...',name);
     % Specify the options.
     options.nn.conzonotope_bounding_method = 'dual-iter';
-    options.nn.conzonotope_bound_step_size = 1;
+    options.nn.conzonotope_bound_step_size = 5e-1;
     options.nn.conzonotope_bound_max_iter = numIterations(i);
     % Set default values.
     options = nnHelper.validateNNoptions(options);

@@ -51,7 +51,12 @@ end
 % evaluate ----------------------------------------------------------------
 
 methods  (Access = {?nnLayer, ?neuralNetwork})
-    
+
+    function storeInput = storeInputForBackpropWithoutWeightUpdate(obj)
+        % The identity does not require the input to compute the gradients.
+        storeInput = false;
+    end
+
     % numeric
     function input = evaluateNumeric(obj, input, options)
         % return identity

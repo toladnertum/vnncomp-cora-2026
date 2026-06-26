@@ -10,7 +10,8 @@ function h = computeHeuristic(heuristic,l,u,er,sens,grad,varargin)
 %    er - approximation error radius
 %    sens - sensitivity
 %    grad - gradient
-%    varargin - optional arguments (prevNrXs, neuronIds, onlyUnstable, layerDiscount)
+%    varargin - optional arguments (prevNrXs, neuronIds, onlyUnstable,
+%       normPerLayer, betaHyperplanes, simDiversity)
 %
 % Outputs:
 %    h - computed heuristic score
@@ -29,8 +30,8 @@ function h = computeHeuristic(heuristic,l,u,er,sens,grad,varargin)
 % ------------------------------ BEGIN CODE -------------------------------
 
 % Set default parameters.
-[prevNrXs,neuronIds,onlyUnstable] = ...
-    setDefaultValues({[],[],true}, varargin);
+[prevNrXs,neuronIds,onlyUnstable,normPerLayer,betaHyperplanes,simDiversity] = ...
+    setDefaultValues({[],[],true,true,[],0}, varargin);
 
 % Obtain the number of dimensions and batchsize.
 [n,bSz] = size(l);
@@ -40,11 +41,11 @@ function h = computeHeuristic(heuristic,l,u,er,sens,grad,varargin)
 % sensitivity to avoid recomputation.)
 if ~isempty(sens) && size(sens,2) < bSz
     % Replicate the sensitvity to match the batch size.
-    sens = repmat(sens,[1 floor(bSz/size(sens,2))]);
+    sens = repelem(sens,1,floor(bSz/size(sens,2)));
 end
 if ~isempty(grad) && size(grad,2) < bSz
     % Replicate the sensitvity to match the batch size.
-    grad = repmat(grad,[1 floor(bSz/size(grad,2))]);
+    grad = repelem(grad,1,floor(bSz/size(grad,2)));
 end
 
 % Compute the raw heuristic using the specific function.
@@ -84,13 +85,6 @@ h = reshape(h,[n bSz]);
 
 % --- Common Post-Processing ---
 
-if onlyUnstable
-    % Flag unstable neurons.
-    unstable = (l < 0 & 0 < u);
-    % Only consider unstable neurons.
-    h(~unstable) = -inf;
-end
-
 if ~isempty(prevNrXs)
     % Obtain the batch size.
     [~,bSz] = size(prevNrXs);
@@ -109,9 +103,47 @@ if ~isempty(prevNrXs)
     % Identify already split neurons.
     wasSplit = any(permute(abs(prevNrXs_),[3 2 1]) ...
         == repmat(neuronIds,bSz,1)',3);
+
+    if simDiversity > 0 && ~isempty(betaHyperplanes)
+        % Diversify the splits: reduce the heuristic of neurons whose
+        % split hyperplane (in beta-space) aligns with that of a
+        % previously split neuron of the same layer. The split
+        % hyperplane normal of a neuron is its generator row. Splits
+        % with orthogonal hyperplanes are not penalized.
+        G = betaHyperplanes;
+        % Normalize each neuron's split-hyperplane normal.
+        nG = G./max(sqrt(sum(G.^2,2)),1e-12); % [n q bSz]
+        % Pairwise cosine similarity of the split hyperplanes.
+        simMat = abs(pagemtimes(nG,'none',nG,'transpose')); % [n n bSz]
+        % Only compare against previously split neurons (along dim 2).
+        splitMask = permute(wasSplit,[3 1 2]); % [1 n bSz]
+        % For each neuron, obtain the most similar previous split.
+        maxSim = reshape(max(simMat.*splitMask,[],2),size(h));
+        % Reduce the heuristic for neurons aligned with a previous
+        % split; leave the -inf scores of stable neurons untouched to
+        % avoid -inf*0 = NaN.
+        penalty = max(1 - simDiversity.*maxSim,0);
+        h = h.*penalty;
+    end
+
     % There is no similarity; just prevent splitting the same
     % neuron twice by setting the heuristic to -inf.
     h(wasSplit) = -inf;
+end
+
+if normPerLayer
+  % Normalize the heuristic per layer (per batch element) so scores are
+  % comparable across layers with different magnitudes.
+  hMax = max(abs(h).*isfinite(h),[],1);
+  hMax(hMax == 0) = 1;
+  h = h ./ hMax;
+end
+
+if onlyUnstable
+    % Flag unstable neurons.
+    unstable = (l < 0 & 0 < u);
+    % Only consider unstable neurons.
+    h(~unstable) = -inf;
 end
 
 end

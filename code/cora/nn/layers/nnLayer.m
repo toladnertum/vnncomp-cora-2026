@@ -49,7 +49,7 @@ properties
     backprop = struct('store', struct)
 
     % Flag that indicates if the parameters are learnable.
-    areParamsLearnable      
+    areParamsLearnable
 end
 
 methods
@@ -163,6 +163,15 @@ methods (Access = {?nnLayer, ?neuralNetwork})
     end
 
     % backprop ------------------------------------------------------------
+
+    function storeInput = storeInputForBackpropWithoutWeightUpdate(obj)
+        % Bool flag, if the input is required for computing the gradients
+        % without a weight update. Layers that do not need the input to
+        % backpropagate the gradient (e.g., linear layers) override this
+        % with false to reduce the memory required during forward
+        % propagation.
+        storeInput = true;
+    end
 
     function grad_in = backpropNumeric(obj, input, grad_out, options, updateWeights)
         throw(CORAerror('CORA:nnLayerNotSupported', obj, 'backprop/numeric'))

@@ -106,7 +106,14 @@ end
 % evaluate ----------------------------------------------------------------
 
 methods (Access = {?nnLayer, ?neuralNetwork})
-    
+
+    function storeInput = storeInputForBackpropWithoutWeightUpdate(obj)
+        % The composite layer manages the input storage of its inner layers
+        % individually; the composite layer's own input is not required to
+        % compute the gradients.
+        storeInput = false;
+    end
+
     % numeric
     function r = evaluateNumeric(obj, input, options)
         obj.checkInputSize();
@@ -121,7 +128,8 @@ methods (Access = {?nnLayer, ?neuralNetwork})
             ri = input;
             for j=1:length(layersi)        
                 % Store input for backpropgation.
-                if options.nn.train.backprop
+                if options.nn.train.backprop || ...
+                    (layersi{j}.storeInputForBackpropWithoutWeightUpdate() && options.nn.backprop_without_weight_update)
                     layersi{j}.backprop.store.input = ri;
                 end
                 ri = layersi{j}.evaluateNumeric(ri, options);
@@ -163,7 +171,8 @@ methods (Access = {?nnLayer, ?neuralNetwork})
             ri = input;
             for j=1:length(layersi)        
                 % Store input for backpropgation.
-                if options.nn.train.backprop
+                if options.nn.train.backprop || ...
+                    (layersi{j}.storeInputForBackpropWithoutWeightUpdate() && options.nn.backprop_without_weight_update)
                     layersi{j}.backprop.store.input = ri;
                 end
                 ri = layersi{j}.evaluateInterval(ri, options);
@@ -279,7 +288,7 @@ methods (Access = {?nnLayer, ?neuralNetwork})
                 % sub-layer (not just activation layers): the composite backprop
                 % pass reads each sub-layer's input, incl. the input selectors.
                 if options.nn.train.backprop || ...
-                        options.nn.backprop_without_weight_update
+                    (layersij.storeInputForBackpropWithoutWeightUpdate() && options.nn.backprop_without_weight_update)
                     layersij.backprop.store.inc = rci;
                     layersij.backprop.store.inG = rGi;
                 end
@@ -332,7 +341,7 @@ methods (Access = {?nnLayer, ?neuralNetwork})
                         end
                     case 'concat'
                         % Concatenate the centers.
-                        [rc,~] = aux_concat(obj,rc,imgSize,rci,imgSizei);
+                        [rc,~] = aux_concat(obj,rc,imgSize,rci,imgSizei,options.nn.interval_center);
                         % Concatenate generator matrices.
                         [rG,imgSize] = aux_concat(obj,rG,imgSize,rGi,imgSizei,true);
                     otherwise
@@ -381,7 +390,11 @@ methods (Access = {?nnLayer, ?neuralNetwork})
             layersi = obj.layers{i};
             for j=length(layersi):-1:1
                 % Retrieve stored input.
-                inputsij = layersi{j}.backprop.store.input;
+                if isfield(layersi{j}.backprop.store,'input')
+                    inputsij = layersi{j}.backprop.store.input;
+                else
+                    inputsij = [];
+                end
                 % Compute the gradient.
                 grad_in_i = layersi{j}.backpropNumeric(inputsij, ...
                     grad_in_i,options,updateWeights);
@@ -427,10 +440,15 @@ methods (Access = {?nnLayer, ?neuralNetwork})
             idxLayeri = flip(1:length(layersi));
             for j=idxLayeri
                 layersij = layersi{j};
-                % Retrieve stored input
-                input = layersij.backprop.store.input;
-                l = input.inf;
-                u = input.sup;
+                % Retrieve stored input.
+                if isfield(layersij.backprop.store,'input')
+                    input = layersij.backprop.store.input;
+                    l = input.inf;
+                    u = input.sup;
+                else
+                    l = [];
+                    u = [];
+                end
                 % Compute the gradient.
                 [rgli,rgui] = layersij.backpropIntervalBatch(l,u,rgli,rgui, ...
                     options,updateWeights);
@@ -449,7 +467,7 @@ methods (Access = {?nnLayer, ?neuralNetwork})
             case 'add'
                 %
             case 'concat'
-                gc = aux_divideInput(obj,gc,obj.outputSizes);
+                gc = aux_divideInput(obj,gc,obj.outputSizes,options.nn.interval_center);
                 gG = aux_divideInput(obj,gG,obj.outputSizes,true);
             otherwise
                 throw(CORAerror('CORA:wrongFieldValue', ...

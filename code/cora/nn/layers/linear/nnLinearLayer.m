@@ -168,6 +168,13 @@ methods  (Access = {?nnLayer, ?neuralNetwork})
 
     % backprop ------------------------------------------------------------
 
+    function storeInput = storeInputForBackpropWithoutWeightUpdate(obj)
+        % The input is only required to update the weights; thus, we do
+        % not need to store the input for computing the gradients without
+        % a weight update.
+        storeInput = false;
+    end
+
     function grad_in = backpropNumeric(obj, input, grad_out, options, updateWeights)
         if updateWeights
             % update weights and bias
@@ -198,14 +205,19 @@ methods  (Access = {?nnLayer, ?neuralNetwork})
     end
 
     function [gc, gG] = backpropZonotopeBatch(obj, c, G, gc, gG, options, updateWeights)
-        [n,numGen,batchSize] = size(G);
+        [~,~,batchSize] = size(gG);
         % obtain indices of active generators
         genIds = obj.genIds;
 
         if options.nn.interval_center
             % Compute gradient of the interval center.
-            cl = reshape(c(:,1,:),[n batchSize]);
-            cu = reshape(c(:,2,:),[n batchSize]);
+            if ~isempty(c)
+                cl = reshape(c(:,1,:),[size(c,1) batchSize]);
+                cu = reshape(c(:,2,:),[size(c,1) batchSize]);
+            else
+                cl = [];
+                cu = [];
+            end
             gl = reshape(gc(:,1,:),[size(gc,1) batchSize]);
             gu = reshape(gc(:,2,:),[size(gc,1) batchSize]);
             % Compute the out going gradient of the center.

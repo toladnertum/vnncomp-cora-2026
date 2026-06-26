@@ -50,7 +50,7 @@ for i=idxLayer
 
     % Store input for neuron-splitting or backpropgation.
     if options.nn.train.backprop || ...
-            (isa(layeri,'nnActivationLayer') && options.nn.backprop_without_weight_update)
+            (layeri.storeInputForBackpropWithoutWeightUpdate() && options.nn.backprop_without_weight_update)
         layeri.backprop.store.inc = c;
         layeri.backprop.store.inG = G;
     end

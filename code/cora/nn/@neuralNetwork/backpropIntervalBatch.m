@@ -33,10 +33,15 @@ function [gl, gu] = backpropIntervalBatch(nn, gl, gu, options, varargin)
 
 for i = flip(idxLayer)
     layeri = nn.layers{i};
-    % Retrieve stored input
-    input = layeri.backprop.store.input;
-    l = input.inf;
-    u = input.sup;
+    % Retrieve stored input.
+    if isfield(layeri.backprop.store,'input')
+        input = layeri.backprop.store.input;
+        l = input.inf;
+        u = input.sup;
+    else
+        l = [];
+        u = [];
+    end
     [gl, gu] = layeri.backpropIntervalBatch(l, u, gl, gu, options, updateWeights);
 end
 

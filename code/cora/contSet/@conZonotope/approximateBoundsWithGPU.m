@@ -196,14 +196,28 @@ function [l,u,bl,bu] = aux_boundConZonotope(c,G,dr,A,b,options)
             u = c_ + r;
 
             % Bound the solution of the linear program.
-            rl = -aux_boundConZonotopeSupportFunction(A,b,-G,options);
+            rl = -aux_boundConZonotopeSupportFunction(A,b,-G,bl,bu,options);
             % Bound the solution of the linear program.
-            ru = aux_boundConZonotopeSupportFunction(A,b,G,options);
+            ru = aux_boundConZonotopeSupportFunction(A,b,G,bl,bu,options);
 
-            % Compute the bounds of the constrained zonotope from the 
+            % Compute the bounds of the constrained zonotope from the
             % bounded solutions.
             l = max(l,c + rl - dr);
             u = min(u,c + ru + dr);
+
+            % Tighten the hypercube (factor) bounds by bounding the
+            % support function along each factor direction (G_factor=I_q).
+            % The FM bounds [bl,bu] are typically loose on dense
+            % constraints; without this pass the refinement loop in
+            % neuralNetwork/verify sees only the FM factor bounds and
+            % cannot exploit the dual tightening of l,u.
+            Iq = repmat(eye(q,'like',G),1,1,bSz);
+            bld = -aux_boundConZonotopeSupportFunction( ...
+                A,b,-Iq,bl,bu,options);
+            bud = aux_boundConZonotopeSupportFunction( ...
+                A,b,Iq,bl,bu,options);
+            bl = max(bl,bld);
+            bu = min(bu,bud);
         case 'exact'
             % Slow implementation that computes the exact bounds by solving 
             % 2*n linear programs.
@@ -347,7 +361,7 @@ function [bl,bu] = aux_fourierMotzkinApproximation(A,b,options)
     end
 end
 
-function h = aux_boundConZonotopeSupportFunction(A,b,G,options)
+function h = aux_boundConZonotopeSupportFunction(A,b,G,bl,bu,options)
     % We compute bounds of a constrained zonotope by computing a bound on 
     % the support function in both directions for each dimension. 
     % For a constrained zonotope (c,G,A,b) we the bounds 
@@ -403,161 +417,126 @@ function h = aux_boundConZonotopeSupportFunction(A,b,G,options)
     % We use gradient-based optimization to optimize \lambda. The problem
     % is convex, but non-smooth, i.e., the optimization objective is
     %   \phi(\lambda) = \lambda^T\,b + \abs{+/-G_{(i,.)}^T - A^T\,\lambda}\,1,
-    % for \lambda >= 0. 
-    % We approximate the objective with a smooth approximation of \abs{.}, 
-    % i.e., 
-    %   \abs{x} \approx \sqrt{x^2 + epsilon^2} - epsilon
-    % The surrogate objective is
-    %   \tilde{\phi}(\lambda) = \lambda^T\,b + (\sqrt{(+/-G_{(i,.)}^T - A^T\,\lambda)^2 + epsilon^2} - epsilon)\,1,
-    % The gradient of \tilde{\phi} is
-    %   \nabla_{\lambda} \tilde{\phi}(\lambda) = b - A\,/\sqrt{+/-G_{(i,.)}^T - A^T\,\lambda + epsilon^2}\,1.
+    % for \lambda >= 0.
+    % We use projected ADAM with subgradients of the true (non-smooth)
+    % objective. A subgradient of \abs{.} is \sign{.}, so the subgradient
+    % of \phi is
+    %   \partial_{\lambda} \phi(\lambda) = b - A\,\sign(+/-G_{(i,.)}^T - A^T\,\lambda).
+    % This approach follows Wong & Kolter (2018) and De Palma et al. (2021)
+    % who use ADAM for dual LP relaxation optimization in NN verification.
 
     % Obtain the number of dimensions, generators, and the batch size.
-    [n,q,bSz] = size(G);
+    [n,~,bSz] = size(G);
     % Obtain the number of constraints.
     [p,~,~] = size(A);
     % Reshape for easier batch-wise computations.
     b = reshape(b,[p 1 bSz]);
 
     % Compute scaling factors for the constraints (rows of A).
-    % This prevents certain constraints from dominating the gradient 
+    % This prevents certain constraints from dominating the gradient
     % purely due to magnitude.
-    scalingA = 1./(max(1,sqrt(sum(A.^2,2)))); 
+    scalingA = 1./(max(1,sqrt(sum(A.^2,2))));
     A = scalingA.*A;
     b = scalingA.*b;
-
-    % Specify an optimization step size.
-    sSz = options.nn.conzonotope_bound_step_size;
-    % Specify step size decay.
-    beta = 0.5;
-    % Specify the number of step sizes to try during backtracking.
-    nsSzs = 2^5;
-    % Compute the possible step sizes. Permute s.t. we can do batch wise
-    % computations for all step sizes simultaneously.
-    sSzs = permute((beta.^(0:(nsSzs-1)))*sSz,[1 3 4 2]);
 
     % Obtain the number of iterations.
     maxIter = options.nn.conzonotope_bound_max_iter;
 
-    % Specify a smoothing parameter.
-    epsilon = 1;
-    % Construct a function handle for the surrogate absolute value.
-    % softplus = @(x) log(1 + exp(x));
-    % dsoftplus = @(x) 1./(1 + exp(-x));
-    sAbs = @(x,epsilon) sum(sqrt(x.^2 + epsilon^2) - epsilon,2);
-    dsAbs = @(x,epsilon) x./sqrt(x.^2 + epsilon^2);
-    % Define strong convexity parameter (1e-6 to 1e-4 is usually safe)
+    % Define strong convexity parameter (1e-6 to 1e-4 is usually safe).
+    % We anneal mu over iterations: large early (smoothing for faster
+    % convergence) and near-zero later (tighter bounds).
     mu = 1e-5;
+    % Smoothing parameter for the subgradient approximation.
+    % Using x./(abs(x)+epsSmooth) instead of sign(x) provides gradient
+    % information near zero, improving ADAM's moment estimates.
+    epsSmooth = cast(1e-6,'like',G);
     % Construct a function handle for the optimization objective.
-    f = @(x) reshape(pagemtimes(x,'transpose',b,'none') ...
+    f = @(x,muK) reshape(pagemtimes(x,'transpose',b,'none') ...
         + sum(abs(G - pagemtimes(x,'transpose',A,'none')),2),n,bSz,[]) ...
-        + (mu/2)*reshape(sum(x.^2,1),n,bSz,[]);
-    df = @(x,epsilon) b - pagemtimes(A,'none', ...
-        dsAbs(G - pagemtimes(x,'transpose',A,'none'),epsilon),'transpose') ...
-        + mu*x;
+        + (muK/2)*reshape(sum(x.^2,1),n,bSz,[]);
+    % Construct a function handle for the smoothed subgradient.
+    df = @(x,muK) b - pagemtimes(A,'none', ...
+        (G - pagemtimes(x,'transpose',A,'none')) ./ ...
+        (abs(G - pagemtimes(x,'transpose',A,'none')) + epsSmooth), ...
+        'transpose') ...
+        + muK*x;
 
-    % Initialize the dual variables.
-    l = zeros([p n bSz],'like',G); % zeros([p n bSz],'like',G);
-    % Initialize iteration counter.
-    iter = 1;
+    % Warm-start the dual variables using the Fourier-Motzkin bounds.
+    % For each dimension i, the unconstrained maximizer of G_{(i,:)} beta
+    % within the FM box [bl,bu] is:
+    %   beta*_j = bu_j if G_{(i,j)} > 0,  bl_j if G_{(i,j)} < 0.
+    % Constraints violated by beta* are the ones that need positive dual
+    % variables (by complementary slackness). We initialize lambda
+    % proportional to the constraint violation.
+    bl_ = permute(bl,[1 3 2]); % [q x 1 x bSz]
+    bu_ = permute(bu,[1 3 2]); % [q x 1 x bSz]
+    Gp = permute(G,[2 1 3]); % [q x n x bSz]
+    betaStar = (Gp > 0).*bu_ + (Gp <= 0).*bl_; % [q x n x bSz]
+    slack = b - pagemtimes(A,betaStar); % [p x n x bSz]
+    % Set lambda proportional to violation (slack < 0 means violated).
+    l = max(-slack, 0);
 
-    % Initialize the L-BFGS parameters and memory.
-    mSz = 5; % memory size.
-    c1 = 1e-4; % for backtracking line search (Armijo condition).
-    c2 = 0.9; % for backtracking line search (Curvature condition).
-    % Initialize the memory; we store in reverse order, i.e., 
-    % k-1, k-2, ..., k-mSz.
-    s = nan([p n bSz 0],'like',G); % store variables differences
-    y = nan([p n bSz 0],'like',G); % store gradient differences
-    % Store intermediate computed factors.
-    as = nan([1 n bSz mSz],'like',G);
-    bs = nan([1 n bSz mSz],'like',G);
+    % ADAM parameters.
+    lr = options.nn.conzonotope_bound_step_size;
+    beta1 = 0.9;
+    beta2 = 0.999;
+    epsAdam = 1e-8;
+    % Initialize first and second moment estimates.
+    mAdam = zeros([p n bSz],'like',G);
+    vAdam = zeros([p n bSz],'like',G);
+    % Counter for stagnation-based momentum restart.
+    stagnationCount = 0;
 
-    % Compute the gradient at the initial position.
-    dl = df(l,epsilon);
+    % Track the best objective value found during optimization.
+    % We evaluate with mu=0 (true dual objective) for fair comparison
+    % across iterations with different muK values.
+    bestF = f(l,0);
 
     % Do an iterative optimization of the dual variables.
-    while iter <= maxIter
-        % Store old variables and gradients.
-        l_ = l;
-        dl_ = dl;
+    for iter = 1:maxIter
+        % Anneal the regularization parameter with cosine schedule.
+        muK = mu * 0.5 * (1 + cos(pi * (iter - 1) / maxIter));
 
-        % Estimate the search direction using two-recursions.
-        qk = dl;
-        for i=1:min(mSz,size(s,4))
-            ri = 1./sum(y(:,:,:,i).*s(:,:,:,i),1);
-            as(:,:,:,i) = ri.*sum(s(:,:,:,i).*qk,1);
-            qk = qk - as(:,:,:,i).*y(:,:,:,i);
-        end
-        if isempty(s)
-            % The memory is empty.
-            gammak = 1;
-        else
-            gammak = sum(s(:,:,:,1).*y(:,:,:,1),1)./...
-                sum(y(:,:,:,1).*y(:,:,:,1),1);
-        end
-        zk = gammak.*qk; % Hk = gammak.*eye(p,'like',G);
-        for i=min(mSz,size(s,4)):-1:1
-            ri = 1./sum(y(:,:,:,i).*s(:,:,:,i),1);
-            bs(:,:,:,i) = ri.*sum(y(:,:,:,i).*zk,1);
-            zk = zk + s(:,:,:,i).*(as(:,:,:,i) - bs(:,:,:,i));
-        end
-        % Invert final search direction for minimization.
-        zk = -zk;
+        % Compute the smoothed subgradient at the current position.
+        grad = df(l,muK);
 
-        % Zero search direction if l == 0 and dl > 0.
-        zk(l == 0 & zk < 0) = 0;
+        % ADAM moment updates.
+        mAdam = beta1*mAdam + (1 - beta1)*grad;
+        vAdam = beta2*vAdam + (1 - beta2)*grad.^2;
+        % Bias-corrected moment estimates.
+        mHat = mAdam / (1 - beta1^iter);
+        vHat = vAdam / (1 - beta2^iter);
 
-        % Do a backtracking line search to find a suitable step size. 
-        % Therefore, we do a simultaneous step with all step sizes and 
-        % pick the best result.
+        % Cosine annealing learning rate schedule.
+        lrK = lr * 0.5 * (1 + cos(pi * (iter - 1) / maxIter));
 
-        % Do a proximal gradient step with the current step size.
-        ls = l + sSzs.*zk;
+        % ADAM step (minimization).
+        l = l - lrK * mHat ./ (sqrt(vHat) + epsAdam);
         % Project onto the feasible set, i.e., lambda >= 0.
-        ls = max(ls,0);
+        l = max(l, 0);
 
-        % Compute objective at the old and new point.
-        fl = f(l);
-        fls = f(ls);
-        dls = df(ls,epsilon);
-        % Compute the scalar product between gradient and search direction.
-        sdflzk = reshape(sum(dl.*zk,1),[n bSz]);
-        sdflszk = reshape(sum(dls.*zk,1),[n bSz nsSzs]);
-        % Compute the Armijo condition.
-        armijoCond = (fls <= fl + c1.*sSzs(:,:,:).*sdflzk);
-        curvCond = (abs(sdflszk) <= c2.*abs(sdflzk));
+        % Track the best solution (since subgradient methods are not
+        % monotone, we keep the best iterate). Evaluate with mu=0 (true
+        % dual objective) for consistent comparison across iterations.
+        fl = f(l,0);
+        improved = fl < bestF;
+        bestF(improved) = fl(improved);
 
-        % Use 'max' function to find the first, i.e., largest, step size
-        % that sastisfies Armijo–Goldstein the condition.
-        [~,ids] = max(armijoCond & curvCond,[],3);
-        % Compute linear indices to extract the correct values.
-        idx = sub2ind([n bSz nsSzs], ...
-            repelem((1:n)',1,bSz),repmat(1:bSz,n,1),ids);
-        % Update the variables with the largest possible step size.
-        l = reshape(ls(:,idx),[p n bSz]);
-
-        % Compute the gradient at the new position; projected gradient.
-        dl = df(l,epsilon); % (l - l_)./sSzs(ids); % 
-
-        if all(curvCond,'all')
-            % Only update the memory if the curvature condition holds.
-
-            % Compute new memory entries.
-            s_ = l - l_;
-            y_ = dl - dl_;
-            % Prepend the new entries to the memory.
-            s = cat(4,s_,s(:,:,:,1:min(mSz-1,end)));
-            y = cat(4,y_,y(:,:,:,1:min(mSz-1,end)));
+        % Restart ADAM momentum on stagnation to escape cycles.
+        if any(improved,'all')
+            stagnationCount = 0;
+        else
+            stagnationCount = stagnationCount + 1;
+            if stagnationCount >= 4
+                mAdam(:) = 0;
+                vAdam(:) = 0;
+                stagnationCount = 0;
+            end
         end
-
-        % Increment iteration counter.
-        iter = iter + 1;
-        % Decay epsilon.
-        epsilon = max(0.5*epsilon,1e-6);
     end
-    % Compute the final bound on the support function.
-    h = f(l);
+    % Compute the final bound on the support function using the best
+    % dual variables found.
+    h = bestF;
 end
 
 % ------------------------------ END OF CODE ------------------------------

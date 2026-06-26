@@ -62,7 +62,9 @@ options.nn.num_generators = 100;
 S_out = nn_cora.evaluate(S_in, options);
 
 % test sensitivity
-nn_cora.calcSensitivity(S_in.c);
+options.nn.train.backprop = true; % Temporary fix to store the input for 
+% a max-pooling layer.
+nn_cora.calcSensitivity(S_in.c, options);
 
 % TEST FOR POINTS
 

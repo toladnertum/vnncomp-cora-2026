@@ -55,8 +55,8 @@ assert(~strcmp(verifRes.str,'COUNTEREXAMPLE') & isempty(x_) & isempty(y_));
 options.nn.falsification_method = 'zonotack';
 options.nn.refinement_method = 'zonotack';
 % Specify parameters.
-options.nn.num_splits = 2; 
-options.nn.num_dimensions = 2;
+options.nn.num_pieces_per_split = 2; 
+options.nn.num_input_dimension_splits = 2;
 options.nn.num_neuron_splits = 1;
 % Restrict the number of input generators.
 options.nn.train.num_init_gens = 5;
@@ -88,11 +88,12 @@ end
 options.nn.falsification_method = 'zonotack';
 options.nn.refinement_method = 'zonotack';
 % Specify parameters.
-options.nn.num_splits = 3; 
-options.nn.num_dimensions = 1;
+options.nn.num_pieces_per_split = 3; 
+options.nn.num_input_dimension_splits = 1;
 options.nn.num_neuron_splits = 1;
 % Restrict the number of input generators.
-options.nn.train.num_init_gens = 5;
+options.nn.train.num_init_gens = 4;
+options.nn.input_generator_heuristic = 'zono-norm-gradient';
 % Restrict the number of approximation error generators per layer.
 options.nn.train.num_approx_err = 43;
 options.nn.approx_error_order = 'length';
@@ -110,8 +111,8 @@ end
 options.nn.falsification_method = 'zonotack';
 options.nn.refinement_method = 'zonotack';
 % Specify parameters.
-options.nn.num_splits = 2; 
-options.nn.num_dimensions = 1;
+options.nn.num_pieces_per_split = 2; 
+options.nn.num_input_dimension_splits = 1;
 options.nn.num_neuron_splits = 0;
 % Add relu tightening constraints.
 options.nn.num_relu_constraints = 7;
@@ -130,8 +131,8 @@ end
 options.nn.falsification_method = 'zonotack';
 options.nn.refinement_method = 'zonotack'; 
 % Specify parameters.
-options.nn.num_splits = 2; 
-options.nn.num_dimensions = 3;
+options.nn.num_pieces_per_split = 2; 
+options.nn.num_input_dimension_splits = 3;
 options.nn.num_neuron_splits = 1;
 % Add relu tightening constraints.
 options.nn.num_relu_constraints = 15;
@@ -152,8 +153,8 @@ end
 options.nn.falsification_method = 'zonotack';
 options.nn.refinement_method = 'zonotack'; 
 % Specify parameters.
-options.nn.num_splits = 2; 
-options.nn.num_dimensions = 3;
+options.nn.num_pieces_per_split = 2; 
+options.nn.num_input_dimension_splits = 3;
 options.nn.num_neuron_splits = 1;
 % Add relu tightening constraints.
 options.nn.num_relu_constraints = 10;

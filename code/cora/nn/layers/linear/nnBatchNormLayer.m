@@ -77,7 +77,8 @@ methods  (Access = {?nnLayer, ?neuralNetwork})
         % Apply scale and offset.
         r = obj.evaluateNumeric@nnElementwiseAffineLayer(input,options);
 
-        if options.nn.train.backprop
+        if options.nn.train.backprop || ...
+                (obj.storeInputForBackpropWithoutWeightUpdate() && options.nn.backprop_without_weight_update)
             % Store the batch-normed input.
             obj.backprop.store.input_normed = input;
             obj.backprop.store.isqrtVar = isqrtVar;
@@ -87,7 +88,11 @@ methods  (Access = {?nnLayer, ?neuralNetwork})
     % sensitivity
     function S = evaluateSensitivity(obj,S,options)
         % Obtain the stored input.
-        x = obj.backprop.store.input;
+        if isfield(obj.backprop.store,'input')
+            x = obj.backprop.store.input;
+        else
+            x = [];
+        end
         % Compute the statistics.
         [~,~,isqrtVar] = obj.aux_computeStoreAndUpdateStats(x,options);
         % Apply the normalization.
@@ -124,7 +129,8 @@ methods  (Access = {?nnLayer, ?neuralNetwork})
         % Apply scale and offset.
         bounds = obj.evaluateInterval@nnElementwiseAffineLayer(bounds,options);
 
-        if options.nn.train.backprop
+        if options.nn.train.backprop || ...
+                (obj.storeInputForBackpropWithoutWeightUpdate() && options.nn.backprop_without_weight_update)
             % Store the batch-normed input.
             obj.backprop.store.bounds_normed = bounds;
             obj.backprop.store.isqrtVar = isqrtVar;
@@ -148,7 +154,8 @@ methods  (Access = {?nnLayer, ?neuralNetwork})
         % Apply scale and offset.
         [c,G] = obj.evaluateZonotopeBatch@nnElementwiseAffineLayer(c,G,options);
 
-        if options.nn.train.backprop
+        if options.nn.train.backprop || ...
+                (obj.storeInputForBackpropWithoutWeightUpdate() && options.nn.backprop_without_weight_update)
             % Store the batch-normed input.
             obj.backprop.store.c_normed = c;
             obj.backprop.store.G_normed = G;
@@ -157,6 +164,13 @@ methods  (Access = {?nnLayer, ?neuralNetwork})
     end
 
     % backprop ------------------------------------------------------------
+
+    function storeInput = storeInputForBackpropWithoutWeightUpdate(obj)
+        % In contrast to the affine layer, batch normalization requires the
+        % input (i.e., the batch size) to backprop the gradients even
+        % without a weight update.
+        storeInput = true;
+    end
 
     function grad_in = backpropNumeric(obj, input, grad_out, options, updateWeights)
         % Obtain batch size.
