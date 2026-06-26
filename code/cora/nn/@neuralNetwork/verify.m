@@ -103,9 +103,9 @@ idxLayer = 1:length(nn.layers);
 % Enumerate the layers of the neural networks.
 [layers,~,~,~] = nn.enumerateLayers();
 
-% Double precision keeps boundary counterexamples inside the input box;
-% single rounds e.g. 0.45 to 0.44999998 and fails strict CE checking.
-inputDataClass = double(1);
+% To speed up computations and reduce GPU memory, we only use single
+% precision.
+inputDataClass = single(1);
 % Check if a GPU is used during verification.
 if options.nn.train.use_gpu
     % Training data is also moved to GPU.
@@ -889,8 +889,9 @@ if any(falsified)
     idNzEntry = find(falsified);
     id = idNzEntry(1);
     x_ = gather(xs(:,id));
-    % Re-evaluate on the host in double to match the verification precision.
-    nn.castWeights(double(1));
+    % Gathering weights from gpu. There is are precision error when
+    % using single gpuArray.
+    nn.castWeights(single(1));
     y_ = nn.evaluate_(x_,options,idxLayer); % yi_(:,id);
 else
     % We have not found a counterexample.
