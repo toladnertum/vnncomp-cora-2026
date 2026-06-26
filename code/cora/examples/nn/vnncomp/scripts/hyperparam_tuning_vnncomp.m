@@ -13,7 +13,7 @@ function hyperparam_tuning_vnncomp(benchmarks,paramGrid,instanceIds,resumePath,d
 %    paramGrid - struct where each field is a param name and each value
 %                is an array of values to try. Field names may use '__' to
 %                address nested fields, e.g. 'train__mini_batch_size'.
-%                Example: struct('num_splits',[2 4 8],'train__mini_batch_size',[16 64])
+%                Example: struct('num_pieces_per_split',[2 4 8],'train__mini_batch_size',[16 64])
 %                Each combination in the grid is the complete options.nn
 %                config — no base defaults are merged in.
 %    instanceIds - (optional) array of instance indices to run (default: all)

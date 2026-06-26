@@ -75,12 +75,23 @@ if strcmp(benchName,'acasxu')
 
 elseif strcmp(benchName,'cgan')
     options.nn.num_pieces_per_split = 2;
-    options.nn.num_dimensions = 1;
+    options.nn.num_input_dimension_splits = 1;
     options.nn.num_neuron_splits = 1;
     options.nn.train.mini_batch_size = 2^2;
     options.nn.neuron_split_heuristic = 'least-unstable';
     options.nn.verify_cascade_unsafe_set_constraints = false;
     options.nn.num_relu_constraints = 0;
+
+elseif strcmp(benchName,'challenging_certified_training')
+    % CNN7 image-classification robustness nets; image-net baseline, to tune.
+    options.nn.interval_center = true;
+    options.nn.train.num_init_gens = 500;
+    options.nn.train.num_approx_err = 0;
+    options.nn.num_relu_constraints = 0;
+    options.nn.num_pieces_per_split = 2;
+    options.nn.num_input_dimension_splits = 1;
+    options.nn.num_neuron_splits = 1;
+    options.nn.batch_union_conzonotope_bounds = false;
 
 elseif strcmp(benchName,'cifar100') % large image classification
     options.nn.train.mini_batch_size = 8;
@@ -106,7 +117,7 @@ elseif strcmp(benchName,'cora')
     options.nn.num_relu_constraints = inf;
     options.nn.train.mini_batch_size = 2^5;
     options.nn.num_pieces_per_split = 2;
-    options.nn.num_dimensions = 1;
+    options.nn.num_input_dimension_splits = 1;
     options.nn.num_neuron_splits = 1;
     options.nn.batch_union_conzonotope_bounds = false;
 
@@ -115,7 +126,7 @@ elseif strcmp(benchName,'metaroom')
     options.nn.train.num_approx_err = 100;
     options.nn.train.mini_batch_size = 2^2;
     options.nn.num_pieces_per_split = 2;
-    options.nn.num_dimensions = 1;
+    options.nn.num_input_dimension_splits = 1;
     options.nn.num_neuron_splits = 0;
     options.nn.num_relu_constraints = 0;
     options.nn.batch_union_conzonotope_bounds = false;
@@ -138,13 +149,13 @@ elseif ismember(benchName,{'monotonic_acasxu','isomorphic_acasxu'})
     % Small composite networks (joint f+g, 5-in each); use input-radius
     % heuristics to avoid backprop through the composite layer.
     options.nn.num_pieces_per_split = 2;
-    options.nn.num_dimensions = 1;
+    options.nn.num_input_dimension_splits = 1;
     options.nn.num_neuron_splits = 0;
     options.nn.train.mini_batch_size = 2^10;
 
 elseif strcmp(benchName,'safenlp')
     options.nn.num_pieces_per_split = 2;
-    options.nn.num_dimensions = 1;
+    options.nn.num_input_dimension_splits = 1;
     options.nn.num_neuron_splits = 1;
     options.nn.num_relu_constraints = 100;
 
@@ -154,7 +165,7 @@ elseif strcmp(benchName,'tinyimagenet') % VNN-COMP'24
     options.nn.train.num_approx_err = 0;
     options.nn.num_relu_constraints = 0;
     options.nn.num_pieces_per_split = 2;
-    options.nn.num_dimensions = 1;
+    options.nn.num_input_dimension_splits = 1;
     options.nn.num_neuron_splits = 1;
     options.nn.batch_union_conzonotope_bounds = false;
     options.nn.train.mini_batch_size = 2^5;

@@ -164,6 +164,12 @@ elseif strcmp(benchName,'cgan')
     end
     nn = neuralNetwork.readONNXNetwork(modelPath,verbose,'BC');
 
+elseif strcmp(benchName,'challenging_certified_training')
+    % CNN7 certified-training nets (CIFAR-10 / TinyImageNet); the dagnetwork
+    % importer crashes on these, so use the plain BCSS path.
+    nn = neuralNetwork.readONNXNetwork(modelPath,verbose,'BCSS');
+    permuteDims = true;
+
 elseif strcmp(benchName,'cifar100')
     nn = neuralNetwork.readONNXNetwork(modelPath,verbose,'BCSS', ...
         '','dagnetwork',true);

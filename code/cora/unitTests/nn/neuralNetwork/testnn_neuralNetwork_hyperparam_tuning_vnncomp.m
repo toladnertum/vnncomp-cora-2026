@@ -83,7 +83,7 @@ benchName = 'test';
 % options.nn struct (prepare_instance does no flat-key translation — the
 % '__'-to-nested mapping happens upstream in hyperparam_tuning).
 overridesA = struct('nn',struct('neuron_split_heuristic','zono-norm-gradient', ...
-    'num_splits',2,'num_dimensions',1,'num_neuron_splits',1));
+    'num_pieces_per_split',2,'num_input_dimension_splits',1,'num_neuron_splits',1));
 overridesB = overridesA;
 overridesB.nn.neuron_split_heuristic = 'least-unstable';
 
