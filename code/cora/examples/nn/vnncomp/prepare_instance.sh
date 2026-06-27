@@ -6,6 +6,12 @@
 # website. Exits with prepare_instance.m's return code (nonzero -> the framework skips the
 # category, per the rules); falls back to a direct MATLAB run if no server can be brought up.
 #   args (vnncomp contract): v1 category onnx vnnlib
+#
+# The benchmark harness (run_single_instance.sh) runs with `set -x` and exports SHELLOPTS, so
+# xtrace would otherwise propagate into this client and its 0.2s wait loop, drowning the relayed
+# MATLAB job output in hundreds of `+ sleep 0.2` / `++ cat .../done` trace lines. Turn it off
+# first; the actual prepare output is the diary relay (tail -F job.log), unaffected by this.
+set +x
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"

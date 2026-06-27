@@ -10,6 +10,12 @@
 # trap. If no healthy server is available it falls back to a direct MATLAB run, so one bad server
 # never loses a whole category.
 #   args (vnncomp contract): v1 category onnx vnnlib out_file timeout
+#
+# The benchmark harness (run_single_instance.sh) runs with `set -x` and exports SHELLOPTS, so
+# xtrace would otherwise propagate into this client and its 0.2s wait loop, drowning the relayed
+# MATLAB job output in hundreds of `+ sleep 0.2` / `++ cat .../done` trace lines. Turn it off
+# first; the actual verification output is the diary relay (tail -F job.log), unaffected by this.
+set +x
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
