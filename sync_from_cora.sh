@@ -9,7 +9,8 @@
 # deliberate manual step.
 set -euo pipefail
 
-CORA=/home/benedikt/Documents/MATLAB/Toolboxes/cora
+# Local CORA checkout to sync from; override with e.g. CORA=/path/to/cora ./sync_from_cora.sh
+CORA="${CORA:-/home/benedikt/Documents/MATLAB/Toolboxes/cora}"
 BRANCH=vnncomp2026-main
 SELF="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
@@ -28,7 +29,8 @@ cp -a "$TMP"/. "$SELF/code/cora/"
 # platform entry points at the repo root
 for f in prepare_instance.m run_instance.m getInstanceFilename.m \
          printErrorMessage.m writeCounterexample.m \
-         prepare_instance.sh run_instance.sh install_tool.sh post_install.sh; do
+         prepare_instance.sh run_instance.sh install_tool.sh post_install.sh \
+         cora_server.sh cora_server.m cora_server_lib.sh; do
     cp "$TMP/examples/nn/vnncomp/$f" "$SELF/$f"
 done
 
