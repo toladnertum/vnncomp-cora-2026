@@ -26,12 +26,20 @@ function [X0, spec] = priv_vnnlib2cora_v1(file)
 %                30-August-2023 (TL, bug fix multiple terms in and)
 %                14-June-2024 (TL, major speed up)
 %                19-April-2026 (BK, moved into private/ as v1 backend)
+%                27-June-2026 (TL, O(n) cursor-based parser)
 % Last revision: ---
 
 % ------------------------------ BEGIN CODE -------------------------------
 
 % read in text from file
 text = fileread(file);
+% Numeric code view of the text for fast per-character scanning. The parser
+% walks an integer cursor over 't'; it never re-slices the (multi-MB) string,
+% which is what made the previous implementation O(n^2) on specs with many
+% disjuncts. 'text' is only indexed to extract the few characters of a token
+% when a numeric value/index actually has to be parsed.
+t = double(text);
+n = numel(t);
 
 % determine number of inputs and number of outputs
 nrInputs = 0;
@@ -63,14 +71,29 @@ data.currIn = 0;
 % parse file
 data.polyInput = [];
 data.polyOutput = [];
-while ~isempty(text)
-    if startsWith(text, '(assert')
-        text = strtrim(text(8:end));
-        [len, data] = aux_parseAssert(text, data);
-        text = strtrim(text(len+1:end));
+
+ASSERT = double('(assert');
+pos = 1;
+while pos <= n
+    pos = aux_skipws(t, pos, n);
+    if pos > n
+        break;
+    end
+    if pos+6 <= n && isequal(t(pos:pos+6), ASSERT)
+        pos = pos + 7;
+        pos = aux_skipws(t, pos, n);
+        [pos, data] = aux_parseExpr(t, text, pos, n, data);
+        % consume the closing ')' of the assert statement
+        pos = aux_skipws(t, pos, n);
+        if pos <= n && t(pos) == 41 % ')'
+            pos = pos + 1;
+        end
     else
-        ln = regexp(text,newline,'once');
-        text = text((ln+1):end);
+        % not an assert (e.g. declare-const / comment / blank): skip the line
+        while pos <= n && t(pos) ~= 10 % newline
+            pos = pos + 1;
+        end
+        pos = pos + 1;
     end
 end
 
@@ -145,35 +168,62 @@ end
 
 % Auxiliary functions -----------------------------------------------------
 
-function [len, data] = aux_parseAssert(text, data)
-% parse one assert statement
+function pos = aux_skipws(t, pos, n)
+% advance the cursor past spaces, tabs, newlines and carriage returns
+while pos <= n
+    c = t(pos);
+    if c == 32 || c == 10 || c == 13 || c == 9
+        pos = pos + 1;
+    else
+        break;
+    end
+end
+end
 
-if startsWith(text, '(<=') || startsWith(text, '(>=')
+function e = aux_tokenEnd(t, pos, n)
+% first index >= pos that ends a bare token (whitespace or closing paren)
+e = pos;
+while e <= n
+    c = t(e);
+    if c == 32 || c == 41 || c == 10 || c == 13 || c == 9
+        break;
+    end
+    e = e + 1;
+end
+end
 
-    [len, data] = aux_parseLinearConstraint(text, data);
+function [pos, data] = aux_parseExpr(t, text, pos, n, data)
+% parse one S-expression starting at '(' and leave the cursor just past its
+% matching closing ')'
 
-elseif startsWith(text, '(or')
+if pos > n || t(pos) ~= 40 % '('
+    throw(CORAerror('CORA:converterIssue', ...
+        sprintf('Failed to parse vnnlib file. Parsed up to position %i.', pos)))
+end
 
-    text = strtrim(text(4:end));
-    data_.spec = [];
-    data_.nrOutputs = data.nrOutputs;
-    len = 5;
+c = t(pos+1);
+if c == 60 || c == 62 % '<' or '>' -> linear constraint
+    [pos, data] = aux_parseLinearConstraint(t, text, pos, n, data);
 
-    % parse all or conditions
-    while ~startsWith(text, ')')
+elseif c == 111 % 'o' -> (or ...)
+    pos = pos + 3; % past '(or'
+    while true
+        pos = aux_skipws(t, pos, n);
+        if pos > n
+            break;
+        end
+        if t(pos) == 41 % ')'
+            pos = pos + 1;
+            break;
+        end
 
-        % parse one or condition
-        data_.nrInputs = data.nrInputs;
-        data_.nrOutputs = data.nrOutputs;
+        % parse one or-condition into a fresh sub-context
+        data_ = data;
         data_.polyInput = [];
         data_.polyOutput = [];
         data_.currIn = 0;
 
-        [len_, data_] = aux_parseAssert(text, data_);
-
-        % update remaining text
-        text = strtrim(text(len_:end));
-        len = len + len_;
+        [pos, data_] = aux_parseExpr(t, text, pos, n, data_);
 
         % update input conditions
         if ~isempty(data_.polyInput)
@@ -194,31 +244,23 @@ elseif startsWith(text, '(or')
         end
     end
 
-elseif startsWith(text, '(and')
-
-    text = strtrim(text(5:end));
-    len = 6;
-
-    % parse all or conditions
-    while ~startsWith(text, ')')
-        [len_, data] = aux_parseAssert(text, data);
-        text = text(len_:end);
-
-        % trim white spaces
-        text_ = strtrim(text);
-        len_ = len_ + (length(text)-length(text_));
-        text = text_;
-
-        % move overall length counter to current position
-        len = len + len_;
-        if startsWith(text, '(')
-            % multiple terms in and; correct len
-            len = len - 1;
+elseif c == 97 % 'a' -> (and ...)
+    pos = pos + 4; % past '(and'
+    while true
+        pos = aux_skipws(t, pos, n);
+        if pos > n
+            break;
         end
+        if t(pos) == 41 % ')'
+            pos = pos + 1;
+            break;
+        end
+        [pos, data] = aux_parseExpr(t, text, pos, n, data);
     end
 
 else
-    throw(CORAerror('CORA:converterIssue', sprintf('Failed to parse vnnlib file. Parsed up to line %i.', len)))
+    throw(CORAerror('CORA:converterIssue', ...
+        sprintf('Failed to parse vnnlib file. Parsed up to position %i.', pos)))
 end
 end
 
@@ -228,37 +270,40 @@ S.C = zeros(2*n,n);
 S.d = zeros(2*n,1);
 end
 
-function [len, data] = aux_parseLinearConstraint(text, data)
-% parse a linear constraint
+function [pos, data] = aux_parseLinearConstraint(t, text, pos, n, data)
+% parse a linear constraint '(<= arg1 arg2)' / '(>= arg1 arg2)'
 
-% extract operator
-op = text(2:3);
-text = text(5:end);
-len = 5;
+% extract operator ('<' for '<=', '>' for '>=') and step past '(<='/'(>='
+opLeq = (t(pos+1) == 60); % '<'
+pos = pos + 3;
+pos = aux_skipws(t, pos, n);
 
-% get type of constraint (on inputs X or on output Y)
-type = aux_getTypeOfConstraint(text);
+% get type of constraint (on inputs X or on outputs Y)
+type = aux_getTypeOfConstraint(t, pos, n);
 
 % initialization
 if strcmp(type, 'input')
     C = zeros(1, data.nrInputs);
-    d = 0;
 else
     C = zeros(1, data.nrOutputs);
-    d = 0;
 end
+d = 0;
 
 % parse first argument
-[C1, d1, len_] = aux_parseArgument(text, C, d);
-len = len + len_;
-text = strtrim(text(len_:end));
+[C1, d1, pos] = aux_parseArgument(t, text, pos, n, C, d);
+pos = aux_skipws(t, pos, n);
 
 % parse second argument
-[C2, d2, len_] = aux_parseArgument(text, C, d);
-len = len + len_;
+[C2, d2, pos] = aux_parseArgument(t, text, pos, n, C, d);
+pos = aux_skipws(t, pos, n);
+
+% consume the closing ')' of the constraint
+if pos <= n && t(pos) == 41 % ')'
+    pos = pos + 1;
+end
 
 % combine the two arguments
-if strcmp(op, '<=')
+if opLeq
     C = C1 - C2;
     d = d2 - d1;
 else
@@ -266,7 +311,7 @@ else
     d = d1 - d2;
 end
 
-% combine the current constrain with previous constraints
+% combine the current constraint with previous constraints
 if strcmp(type, 'input')
     if isempty(data.polyInput)
         data.polyInput = aux_createPolytopeStruct(data.nrInputs);
@@ -291,121 +336,74 @@ else % output
 end
 end
 
-function [C, d, len] = aux_parseArgument(text, C, d)
-% parse next argument
+function [C, d, pos] = aux_parseArgument(t, text, pos, n, C, d)
+% parse next argument and advance the cursor past it
 
-if startsWith(text, 'X') || startsWith(text, 'Y')
+c = t(pos);
 
-    len = [];
-    for i = 1:length(text)
-        if strcmp(text(i), ' ') || strcmp(text(i), ')')
-            len = i;
-            break;
-        end
-    end
-    index = str2double(text(3:len-1)) + 1;
+if c == 88 || c == 89 % 'X' or 'Y'
+
+    e = aux_tokenEnd(t, pos, n);
+    % token is '<X|Y>_<index>'; the numeric index starts after the '_'
+    index = str2double(text(pos+2:e-1)) + 1;
     C(index) = C(index) + 1;
+    pos = e;
 
-elseif startsWith(text, '(+')
+elseif c == 40 % '(' -> '(+ ...)' or '(- ...)'
 
-    % parse first argument
-    [C1, d1, len] = aux_parseArgument(text, C, d);
-    text = strtrim(text(len:end));
-
-    % parse second argument
-    [C2, d2, len_] = aux_parseArgument(text, C, d);
-    len = len + len_;
-
-    % combine both arguments
-    C = C1 + C2;
-    d = d1 + d2;
-
-elseif startsWith(text, '(-')
+    op = t(pos+1); % '+' (43) or '-' (45)
+    pos = pos + 2;
+    pos = aux_skipws(t, pos, n);
 
     % parse first argument
-    [C1, d1, len] = aux_parseArgument(text, C, d);
-    text = strtrim(text(len:end));
+    [C1, d1, pos] = aux_parseArgument(t, text, pos, n, C, d);
+    pos = aux_skipws(t, pos, n);
 
     % parse second argument
-    [C2, d2, len_] = aux_parseArgument(text, C, d);
-    len = len + len_;
+    [C2, d2, pos] = aux_parseArgument(t, text, pos, n, C, d);
+    pos = aux_skipws(t, pos, n);
 
-    % combine both arguments
-    C = C1 - C2;
-    d = d1 - d2;
-
-else
-
-    len = [];
-    for i = 1:length(text)
-        if strcmp(text(i), ' ') || strcmp(text(i), ')')
-            len = i;
-            break;
-        end
+    % consume the closing ')'
+    if pos <= n && t(pos) == 41
+        pos = pos + 1;
     end
-    d = d + str2double(text(1:len-1));
+
+    % combine both arguments
+    if op == 43 % '+'
+        C = C1 + C2;
+        d = d1 + d2;
+    else % '-'
+        C = C1 - C2;
+        d = d1 - d2;
+    end
+
+else % numeric constant
+
+    e = aux_tokenEnd(t, pos, n);
+    d = d + str2double(text(pos:e-1));
+    pos = e;
 end
 end
 
-function type = aux_getTypeOfConstraint(text)
-% check if the current constraint is on the inputs or on the outputs
+function type = aux_getTypeOfConstraint(t, pos, n)
+% check if the current constraint is on the inputs or on the outputs by
+% scanning forward to the first variable ('X' -> input, 'Y' -> output)
 
-indX = regexp(text, 'X', 'once');
-indY = regexp(text, 'Y', 'once');
-
-% either X or Y must be given
-if isempty(indX)
-    if isempty(indY)
-        % none given
-        throw(CORAerror('CORA:notSupported', 'File format not supported'));
-    else
-        % Y is not empty
-        type = 'output';
-    end
-elseif isempty(indY)
-    % X is not empty
-    type = 'input';
-else
-    % return smaller
-    if indX(1) < indY(1)
+i = pos;
+while i <= n
+    c = t(i);
+    if c == 88 % 'X'
         type = 'input';
-    else
+        return;
+    elseif c == 89 % 'Y'
         type = 'output';
+        return;
     end
-end
-end
-
-function spec = aux_combineSafeSets(spec)
-% combine all specifications involving safe sets to a single safe set
-
-% find all specifications that define a safe set
-ind = [];
-for i = 1:length(spec)
-    if strcmp(spec(i).type, 'safeSet')
-        ind = [ind, i];
-    end
+    i = i + 1;
 end
 
-% check if safe sets exist
-if length(ind) > 1
-
-    % combine safe sets to a single polytope
-    poly = spec(ind(1)).set;
-    for i = 2:length(ind)
-        poly = poly & spec(ind(i)).set;
-    end
-    specNew = specification(poly, 'safeSet');
-
-    % remove old specifications
-    ind_ = setdiff(1:length(spec), ind);
-
-    if isempty(ind_)
-        spec = specNew;
-    else
-        spec = spec(ind_);
-        spec = add(spec, specNew);
-    end
-end
+% neither X nor Y found
+throw(CORAerror('CORA:notSupported', 'File format not supported'));
 end
 
 % ------------------------------ END OF CODE ------------------------------

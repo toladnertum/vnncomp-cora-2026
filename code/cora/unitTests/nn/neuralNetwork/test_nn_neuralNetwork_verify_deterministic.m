@@ -118,7 +118,7 @@ end
 % Test 7: All refinement methods on known-VERIFIED case
 % =========================================================================
 x = 0; r = 1; A = 1; b = 2; safeSet = true;
-refMethods = {'naive','zonotack','zonotack-layerwise'};
+refMethods = {'naive','zonotack'};
 for i = 1:length(refMethods)
     opts = options;
     opts.nn.refinement_method = refMethods{i};

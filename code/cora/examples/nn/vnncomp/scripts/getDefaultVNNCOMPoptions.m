@@ -37,7 +37,7 @@ options.nn.batch_norm_moving_stats = true;
 
 % Specify falsification method: {'center','fgsm','zonotack'}.
 options.nn.falsification_method = 'zonotack';
-% Specify input set refinement method: {'naive','zonotack','zonotack-layerwise'}.
+% Specify input set refinement method: {'naive','zonotack'}.
 options.nn.refinement_method = 'zonotack';
 % Set number of input generators.
 options.nn.train.num_init_gens = inf;

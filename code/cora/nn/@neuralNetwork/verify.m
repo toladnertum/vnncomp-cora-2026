@@ -736,6 +736,14 @@ if size(xs,2) == 0 && ~strcmp(res.str,'COUNTEREXAMPLE')
     y_ = [];
 end
 
+% Refine a counterexample into one that violates the specification beyond the
+% VNN-COMP tolerance: replay it in double precision and, if it only holds
+% within tolerance, push it off the boundary along the input-output
+% sensitivity. Best-effort; never breaks an already-found counterexample.
+if strcmp(res.str,'COUNTEREXAMPLE') && ~isempty(x_)
+    [x_,y_] = aux_refineCounterexample(nn,x,r,A,b,safeSet,x_,A_in,b_in,options);
+end
+
 % Store time.
 res.time = toc(timerVal);
 % Store number of verified patches.
@@ -1005,6 +1013,99 @@ for i=1:length(layers)
     % Clear all fields.
     layeri.backprop.store = struct();
 end
+end
+
+function [x_,y_] = aux_refineCounterexample(nn,x,r,A,b,safeSet,x_,A_in,b_in,options)
+% Strengthen a counterexample so that it violates the specification beyond the
+% VNN-COMP tolerance ("true" CE) instead of only within it ("boundary" CE).
+% The CE is replayed in double precision (the precision the competition checker
+% uses) since a single-precision CE can be spurious in double. If it only holds
+% within tolerance, take one sensitivity-guided step off the boundary and keep
+% the result only if it becomes a genuine (beyond-tolerance) counterexample.
+
+% VNN-COMP counterexample tolerance.
+tol = 1e-4;
+
+try
+    % Replay in double precision on an independent copy so the caller's
+    % network (a handle object) keeps its precision and state.
+    nnD = nn.copyNeuralNetwork();
+    nnD.castWeights(double(1));
+
+    x0 = double(gather(x_(:,1)));
+    xc = double(gather(x(:,1)));
+    rc = double(gather(r(:,1)));
+    Ad = double(A);
+    bd = double(b);
+
+    y0 = nnD.evaluate(x0);
+    m0 = aux_ceMargin(Ad,bd,safeSet,y0); % >0: true CE, <=0: only within tol
+
+    % Always return the double-precision output for the (unchanged) point.
+    x_ = x0;
+    y_ = y0;
+
+    if m0 > 0
+        % Already a robust counterexample.
+        return;
+    end
+
+    % Output-input sensitivity at the boundary point.
+    S = nnD.calcSensitivity(x0,options);
+
+    % Binding constraint: row closest to / past its bound (same index for
+    % safe- and unsafe-set specs, see aux_ceMargin).
+    [~,iStar] = max(Ad*y0 - bd);
+    g = Ad(iStar,:)*S; % d(A_iStar*y)/dx, 1 x n_in
+    g = double(gather(g(:)));
+    ng2 = g'*g;
+    if ng2 == 0
+        % No usable gradient (e.g. all-inactive ReLUs).
+        return;
+    end
+
+    % Minimum-norm input step that, to first order, moves the binding spec
+    % value far enough to clear the boundary by ~2*tol. For a safe-set spec we
+    % must raise A_iStar*y; for an unsafe-set spec we must lower it.
+    dirSign = 1;
+    if ~safeSet
+        dirSign = -1;
+    end
+    dLd = dirSign*(2*tol - m0); % signed target change of A_iStar*y
+    dx = (dLd/ng2)*g;
+
+    % Step, then project back into the input box [x-r, x+r].
+    xCand = min(max(x0 + dx, xc - rc), xc + rc);
+
+    % Respect optional input-side polytope constraints.
+    if ~isempty(A_in) && any(double(A_in)*xCand > double(b_in) + tol)
+        return;
+    end
+
+    yCand = nnD.evaluate(xCand);
+    mCand = aux_ceMargin(Ad,bd,safeSet,yCand);
+    if mCand > 0
+        % Genuine counterexample off the boundary.
+        x_ = xCand;
+        y_ = yCand;
+    end
+catch
+    % Sensitivity/evaluation may fail for some models; keep the original CE.
+end
+end
+
+function m = aux_ceMargin(A,b,safeSet,y)
+% Signed counterexample margin: m > 0 iff y violates the spec strictly,
+% m in (-tol,0] iff it only holds within tolerance. Mirrors aux_checkPoints.
+ld = A*y;
+if safeSet
+    % unsafe iff any(A*y > b)
+    m = max(ld - b);
+else
+    % unsafe iff all(A*y <= b)
+    m = min(b - ld);
+end
+m = double(gather(m));
 end
 
 function [critValPerConstr,critVal,falsified,x_,y_] = ...

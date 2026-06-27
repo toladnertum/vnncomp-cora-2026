@@ -1,45 +1,46 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# run_instance.sh — VNN-COMP per-instance entry; a thin client to the CORA background server. It
+# submits the instance as a `run` job, relays the daemon's live log to its own stdout (-> run.sh
+# tee -> website), waits for the verdict, and copies it to the framework's out file. The daemon
+# (run_instance.m) enforces the per-instance timeout itself and writes the verdict.
+#
+# It holds an flock'd lease for its whole lifetime; if it is killed by the framework's outer
+# `timeout` (SIGTERM then SIGKILL) or the per-benchmark killer, the kernel drops the lease and
+# cora_server.sh tears the daemon down for a clean restart — even though SIGKILL cannot run a
+# trap. If no healthy server is available it falls back to a direct MATLAB run, so one bad server
+# never loses a whole category.
+#   args (vnncomp contract): v1 category onnx vnnlib out_file timeout
+set -u
 
-# example run_instance.sh script for VNNCOMP'25 for CORA
-# Arguments:
-# - version string "v1", 
-# - benchmark identifier string, e.g., "acasxu", 
-# - path to .onnx file,
-# - path to .vnnlib file,
-# - path to results.csv file,
-# - timeout in seconds
+HERE="$(cd "$(dirname "$0")" && pwd)"
+. "$HERE/cora_server_lib.sh"
 
-TOOL_NAME="CORA"
-VERSION_STRING="v1"
+CATEGORY="$2"; ONNX="$3"; VNNLIB="$4"; OUT="$5"; TIMEOUT="$6"
+WAIT_GRACE="${CORA_RUN_GRACE:-30}"     # extra wait beyond TIMEOUT for the daemon's result
 
-# check arguments
-if [ "$1" != ${VERSION_STRING} ]; then
-    echo "Expected first argument (version string) '$VERSION_STRING', got '$1'"
-    exit 1
+# Direct fallback: a plain MATLAB run, matching CORA's non-server run_instance.sh.
+# CORA_DIRECT_CMD is a test seam: `<cmd> run <bench> <onnx> <vnnlib> <out> <timeout>`.
+direct_run() {
+    echo "[run_instance] no healthy server; running directly via MATLAB"
+    if [ -n "${CORA_DIRECT_CMD:-}" ]; then
+        $CORA_DIRECT_CMD run "$CATEGORY" "$ONNX" "$VNNLIB" "$OUT" "$TIMEOUT"; return $?
+    fi
+    local b="${CATEGORY//\'/\'\'}" o="${ONNX//\'/\'\'}" v="${VNNLIB//\'/\'\'}" r="${OUT//\'/\'\'}"
+    sudo matlab -batch "addpath(genpath('$HERE')); run_instance('$b','$o','$v','$r',$TIMEOUT,true);"
+}
 
+# No live + responsive server -> fall back (don't lose the instance).
+if ! server_alive || ! ping_ok; then
+    direct_run
+    exit 0
 fi
 
-BENCHMARK=$2
-ONNX_FILE=$3
-VNNLIB_FILE=$4
-RESULTS_FILE=$5
-TIMEOUT=$6
-
-echo "Running $TOOL_NAME on benchmark instance $BENCHMARK with onnx file $ONNX_FILE, vnnlib file $VNNLIB_FILE, results file $RESULTS_FILE, and timeout $TIMEOUT"
-
-# Check GPU status.
-nvidia-smi
-
-# add the toolkit (and CORA under code/) to the MATLAB path; savepath is not
-# kept for these sudo matlab runs. do not cd: the onnx/vnnlib/results paths are relative.
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-
-# double single quotes so multi-network paths like [('f','..'),('g','..')]
-# don't break the MATLAB string literals
-BENCHMARK_M=${BENCHMARK//\'/\'\'}
-ONNX_M=${ONNX_FILE//\'/\'\'}
-VNNLIB_M=${VNNLIB_FILE//\'/\'\'}
-RESULTS_M=${RESULTS_FILE//\'/\'\'}
-
-# -batch never blocks on a prompt, so an error exits fast instead of hanging
-sudo matlab -batch "addpath(genpath('$SCRIPT_DIR')); run_instance('$BENCHMARK_M','$ONNX_M','$VNNLIB_M','$RESULTS_M',$TIMEOUT,true);"
+submit_job "run" "$CATEGORY" "$ONNX" "$VNNLIB" "$TIMEOUT" "" "$((TIMEOUT + WAIT_GRACE))"
+case $? in
+    0)  cp "$SRV_DIR/result" "$OUT"
+        exit 0 ;;
+    1)  echo "[run_instance] could not acquire server lease; running directly"
+        direct_run; exit 0 ;;
+    2)  echo "[run_instance] no result within $((TIMEOUT + WAIT_GRACE))s; aborting (server will restart)"
+        exit 124 ;;   # exiting frees the lease -> cora_server.sh kills the wedged daemon
+esac

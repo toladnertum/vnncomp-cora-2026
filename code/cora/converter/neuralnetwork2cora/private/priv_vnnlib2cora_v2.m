@@ -28,6 +28,7 @@ function [X0, spec, info] = priv_vnnlib2cora_v2(file)
 %                22-May-2026 (BK, COO sparse accumulation — avoids dense C matrix for large inputs)
 %                13-June-2026 (BK, strict inequality margin to exclude boundary CEs)
 %                22-May-2026 (BK, regex fast path + vectorized interval extraction — speed optimization)
+%                27-June-2026 (TL, removed strict-inequality margin (unsound))
 % Last revision: ---
 
 % ------------------------------ BEGIN CODE -------------------------------
@@ -423,14 +424,12 @@ switch op
             end
         else
             isInput = hasIn;
-            % strict < / > get the official CE tolerance subtracted so a
-            % boundary point (e.g. equal networks) is not a spurious CE
-            sm = 1e-4 * double(any(strcmp(op,{'<','>'})));
+            % strict < / > are treated as non-strict (boundary handling TBD)
             switch op
                 case {'<=', '<'}
-                    data = aux_addRow(data,  C,  d - sm, isInput, totalIn);
+                    data = aux_addRow(data,  C,  d, isInput, totalIn);
                 case {'>=', '>'}
-                    data = aux_addRow(data, -C, -d - sm, isInput, totalIn);
+                    data = aux_addRow(data, -C, -d, isInput, totalIn);
                 case '=='
                     if isInput && nnz(C(1:totalIn)) >= 2
                         % cross-variable input coupling (e.g. X_f[i]==X_g[j])
@@ -489,14 +488,12 @@ switch op
             else
                 % add halfspace row(s) to the appropriate polytope side
                 isInput = hasIn;
-                % strict < / > get the official CE tolerance subtracted so a
-                % boundary point (e.g. equal networks) is not a spurious CE
-                sm = 1e-4 * double(any(strcmp(op,{'<','>'})));
+                % strict < / > are treated as non-strict (boundary handling TBD)
                 switch op
                     case {'<=', '<'}
-                        data = aux_addRow(data,  C,  d - sm, isInput, totalIn);
+                        data = aux_addRow(data,  C,  d, isInput, totalIn);
                     case {'>=', '>'}
-                        data = aux_addRow(data, -C, -d - sm, isInput, totalIn);
+                        data = aux_addRow(data, -C, -d, isInput, totalIn);
                     case '=='
                         if isInput && nnz(C(1:totalIn)) >= 2
                             % cross-variable input coupling -> native equality.
