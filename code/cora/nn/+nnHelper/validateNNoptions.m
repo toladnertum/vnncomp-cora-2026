@@ -95,6 +95,7 @@ if isempty(defaultFields)
         'verify_cascade_unsafe_set_constraints',false; % Split safe sets into unsafe sets and verify them individually and apply already verified specifications.
         'progress_metrics',{'expansion_rate', 'global_lower_bound'}; % Specify the tracked progress metric during neuralNetwork/verify
         'verif_slope_optim_step_size',0; % Step size for the optimization of the approximation slope
+        'strict_counterexamples',false; % only accept a counterexample that violates the spec strictly (double precision); for benchmarks with strict (<,>) output constraints, e.g. monotonic_acasxu. Off by default (most specs use <=,>=, where a boundary point is a valid counterexample).
         };
 end
 % default training parameter values
@@ -386,6 +387,9 @@ if CHECKS_ENABLED
     % safe set specifications
     aux_checkFieldClass(options.nn, ...
         'verify_cascade_unsafe_set_constraints',{'logical'},structName);
+    % strict counterexamples (for strict '<','>' output specs)
+    aux_checkFieldClass(options.nn,'strict_counterexamples', ...
+        {'logical'},structName);
     % slope optimization
     aux_checkFieldClass(options.nn,'verif_slope_optim_step_size', ...
         {'scalar&finite&nonnegative'},structName);

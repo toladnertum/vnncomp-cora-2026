@@ -152,6 +152,11 @@ elseif ismember(benchName,{'monotonic_acasxu','isomorphic_acasxu'})
     options.nn.num_input_dimension_splits = 1;
     options.nn.num_neuron_splits = 0;
     options.nn.train.mini_batch_size = 2^10;
+    % These specs use STRICT output inequalities ('<','>'): monotonic requires
+    % Y_f[3] < Y_g[3], isomorphic |Y_g-Y_f| > 0.05. A boundary point (==) does not
+    % violate them, so only accept counterexamples that hold strictly (in double
+    % precision); otherwise keep refining. Prevents unsound 'sat' the checker rejects.
+    options.nn.strict_counterexamples = true;
 
 elseif strcmp(benchName,'safenlp')
     options.nn.num_pieces_per_split = 2;

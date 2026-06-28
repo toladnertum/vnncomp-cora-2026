@@ -163,6 +163,10 @@ iter = 1;
 batchVars = {'xi','ri','nrXi','S_','S','sens','cxi','Gxi',...
     'yic','yid','Gyi','ld_yi','ld_Gyi'};
 
+% Only accept counterexamples that hold strictly (double precision); for strict
+% '<','>' output specs (e.g. monotonic/isomorphic_acasxu). Default off.
+strictCE = options.nn.strict_counterexamples;
+
 % Determine which progress metrics to display.
 progressMetrics = options.nn.progress_metrics;
 if n0 <= 5
@@ -449,6 +453,16 @@ while size(xs,2) > 0
                 end
             end
         end
+        if any(falsified) && strictCE
+            % Strict spec: keep only a CE that beats the boundary in double
+            % precision; otherwise drop it and keep refining (no boundary 'sat').
+            [x_,y_,isStrictCE] = aux_refineCounterexample( ...
+                nn,x,r,A,b,safeSet,x_,A_in,b_in,options);
+            if ~isStrictCE
+                falsified = false(size(falsified));
+                x_ = []; y_ = [];
+            end
+        end
         if any(falsified)
             % Found a counterexample.
             res.str = 'COUNTEREXAMPLE';
@@ -611,6 +625,15 @@ while size(xs,2) > 0
                                 falsified = false(size(falsified));
                                 x_ = []; y_ = [];
                             end
+                        end
+                    end
+                    if any(falsified) && strictCE
+                        % Strict spec: reject a boundary point CE (see main loop).
+                        [x_,y_,isStrictCE] = aux_refineCounterexample( ...
+                            nn,x,r,A,b,safeSet,x_,A_in,b_in,options);
+                        if ~isStrictCE
+                            falsified = false(size(falsified));
+                            x_ = []; y_ = [];
                         end
                     end
                     if any(falsified)
@@ -1015,16 +1038,20 @@ for i=1:length(layers)
 end
 end
 
-function [x_,y_] = aux_refineCounterexample(nn,x,r,A,b,safeSet,x_,A_in,b_in,options)
+function [x_,y_,isStrictCE] = aux_refineCounterexample(nn,x,r,A,b,safeSet,x_,A_in,b_in,options)
 % Strengthen a counterexample so that it violates the specification beyond the
 % VNN-COMP tolerance ("true" CE) instead of only within it ("boundary" CE).
 % The CE is replayed in double precision (the precision the competition checker
 % uses) since a single-precision CE can be spurious in double. If it only holds
 % within tolerance, take one sensitivity-guided step off the boundary and keep
 % the result only if it becomes a genuine (beyond-tolerance) counterexample.
+% isStrictCE: whether the CE violates the spec strictly in double precision
+% (margin > 0); false on a boundary-only CE or any internal error.
 
 % VNN-COMP counterexample tolerance.
 tol = 1e-4;
+
+isStrictCE = false;
 
 try
     % Replay in double precision on an independent copy so the caller's
@@ -1047,6 +1074,7 @@ try
 
     if m0 > 0
         % Already a robust counterexample.
+        isStrictCE = true;
         return;
     end
 
@@ -1088,6 +1116,7 @@ try
         % Genuine counterexample off the boundary.
         x_ = xCand;
         y_ = yCand;
+        isStrictCE = true;
     end
 catch
     % Sensitivity/evaluation may fail for some models; keep the original CE.
