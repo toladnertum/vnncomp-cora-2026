@@ -36,6 +36,31 @@ submit_job() {
     local type="$1" bench="$2" onnx="$3" vnnlib="$4" timeout="$5" overrides="$6" wait_total="$7"
     JOBID="$$-$(date +%s%N)"
 
+    # Invariant: prepare_instance.sh / run_instance.sh are the ONLY processes that ever take the
+    # lease, and the benchmark framework runs them strictly one at a time. So when we start, the
+    # lease MUST be free. If it is NOT, a previous run is wedged -- e.g. the per-benchmark killer
+    # SIGKILLed its wrapper but a `timeout`-reparented child survived, still holding the lease and
+    # blocking us until its own (10 min) timeout. Reap that orphan so we reclaim the (healthy,
+    # warm) server instead of silently falling back to a slow direct MATLAB run. fuser lists the
+    # holder PIDs; we have not opened fd 9 yet, so it lists only the orphan, never ourselves.
+    if ! flock -n "$SRV_DIR/lease" -c true 2>/dev/null; then
+        local stale
+        stale="$(fuser "$SRV_DIR/lease" 2>/dev/null)"
+        if [ -n "$stale" ]; then
+            echo "[cora] lease held by stale client(s):$stale -- previous run wedged; reaping to reclaim the server"
+            kill -TERM $stale 2>/dev/null
+            local n=20
+            while [ "$n" -gt 0 ] && ! flock -n "$SRV_DIR/lease" -c true 2>/dev/null; do
+                sleep 0.5; n=$((n - 1))
+            done
+            if ! flock -n "$SRV_DIR/lease" -c true 2>/dev/null; then
+                stale="$(fuser "$SRV_DIR/lease" 2>/dev/null)"
+                [ -n "$stale" ] && kill -KILL $stale 2>/dev/null
+                sleep 1
+            fi
+        fi
+    fi
+
     # Hold the lease for our whole lifetime. The kernel drops it on any exit (incl. SIGKILL).
     exec 9> "$SRV_DIR/lease"
     flock -w 10 9 || return 1

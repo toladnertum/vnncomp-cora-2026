@@ -60,7 +60,23 @@ matlab -nodisplay -r "cd ${CURR_DIR}; addpath(genpath('.')); installCORA(false,t
 # Enable GPU persistence mode (prevents driver unloading)
 sudo nvidia-smi -pm 1
 
-# Lock the kernenl verison and GPU drivers.
+# Stop apt from auto-upgrading the NVIDIA driver / kernel out from under a running
+# benchmark. An unattended-upgrades run mid-benchmark replaces the driver libraries on
+# disk while the already-loaded kernel module stays at the old version -> NVML/CUDA
+# "Driver/library version mismatch" -> the GPU disappears (gpuDeviceCount == 0) until the
+# instance reboots. The trigger is the apt-daily-upgrade.timer (which runs unattended-upgrade),
+# NOT just the unattended-upgrades.service, so disable AND mask both the timers and services.
+sudo systemctl disable --now apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service 2>/dev/null || true
+sudo systemctl mask apt-daily.service apt-daily-upgrade.service unattended-upgrades.service 2>/dev/null || true
+
+# Belt-and-suspenders: pin every installed NVIDIA + AWS-kernel package so a manual
+# `apt upgrade` can't bump them either. This image uses the *-server and linux-*-aws
+# package names (not the -generic names the old hold targeted), so query the installed
+# set instead of hard-coding names.
+sudo apt-mark hold $(dpkg-query -W -f='${Package}\n' 'nvidia-*' 'libnvidia-*' 'linux-aws*' 'linux-image-aws*' 'linux-headers-aws*' 2>/dev/null) 2>/dev/null || true
+
+# Original holds kept as an extra net: harmless no-ops if these exact package names are not
+# installed, but they cover the -generic / non-server variants on non-DLAMI images.
 sudo apt-mark hold linux-image-generic linux-headers-generic nvidia-driver-535
 sudo systemctl disable unattended-upgrades
 
