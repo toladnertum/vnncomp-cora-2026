@@ -38,6 +38,7 @@ function [res, x_, y_] = verify(nn, x, r, A, b, safeSet, varargin)
 %                07-April-2026 (LK, memory usage improvements)
 %                02-June-2026 (BK, optional input-side polytope constraints)
 %                11-June-2026 (BK, store layer inputs for heuristic gradients)
+%                29-June-2026 (TL, strict cex)
 % Last revision: ---
 
 % ------------------------------ BEGIN CODE -------------------------------
@@ -1045,11 +1046,15 @@ function [x_,y_,isStrictCE] = aux_refineCounterexample(nn,x,r,A,b,safeSet,x_,A_i
 % uses) since a single-precision CE can be spurious in double. If it only holds
 % within tolerance, take one sensitivity-guided step off the boundary and keep
 % the result only if it becomes a genuine (beyond-tolerance) counterexample.
-% isStrictCE: whether the CE violates the spec strictly in double precision
-% (margin > 0); false on a boundary-only CE or any internal error.
+% isStrictCE: whether the CE violates the spec strictly with a margin of at
+% least strictTol (see below); false on a boundary-only CE or any internal error.
 
 % VNN-COMP counterexample tolerance.
 tol = 1e-4;
+
+% Min output margin for a strict CE: clears the checker's float32 replay floor
+% (~2.4e-9 at ACAS-Xu scale) so tiny boundary CEs aren't accepted.
+strictTol = 1e-8;
 
 isStrictCE = false;
 
@@ -1066,14 +1071,14 @@ try
     bd = double(b);
 
     y0 = nnD.evaluate(x0);
-    m0 = aux_ceMargin(Ad,bd,safeSet,y0); % >0: true CE, <=0: only within tol
+    m0 = aux_ceMargin(Ad,bd,safeSet,y0); % >=strictTol: robust CE, else boundary
 
     % Always return the double-precision output for the (unchanged) point.
     x_ = x0;
     y_ = y0;
 
-    if m0 > 0
-        % Already a robust counterexample.
+    if m0 >= strictTol
+        % Already a robust counterexample (clears the float32 checker floor).
         isStrictCE = true;
         return;
     end
@@ -1112,7 +1117,7 @@ try
 
     yCand = nnD.evaluate(xCand);
     mCand = aux_ceMargin(Ad,bd,safeSet,yCand);
-    if mCand > 0
+    if mCand >= strictTol
         % Genuine counterexample off the boundary.
         x_ = xCand;
         y_ = yCand;
