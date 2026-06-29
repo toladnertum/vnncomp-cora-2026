@@ -457,9 +457,14 @@ function [layers,inputSize,currentSize,nextInputIdx] = ...
             contains(lower(class(dlt_layer)), 'reshape') || ...
             contains(lower(class(dlt_layer)), 'slice')
         % flatten
-        
+
         idx = dlarray(1:prod(currentSize));
-        idx = reshape(idx, currentSize);
+        % reshape needs a >=2-D size; pad a scalar (1-D input) with a singleton.
+        reshapeSize = currentSize;
+        if isscalar(reshapeSize)
+            reshapeSize = [reshapeSize 1];
+        end
+        idx = reshape(idx, reshapeSize);
 
         idx_out = cell(1,dlt_layer.NumOutputs);
         [idx_out{:}] = dlt_layer.predict(idx);

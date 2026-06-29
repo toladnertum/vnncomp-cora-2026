@@ -180,23 +180,119 @@ function layers = aux_groupCompositeLayers(layerslist, connections)
         regexp(connections.Destination,'^[^/]+','match'), ...
             'UniformOutput',false);
 
+    % Duplicate fan-outs that feed merges at different depths (see helper).
+    names = {layerslist.Name}';
+    objs  = num2cell(layerslist);
+    [srcs,dests,weights,names,objs] = ...
+        aux_duplicateForks(srcs,dests,weights,names,objs);
+
     % Convert to digraph.
-    nodesTable = table({layerslist.Name}','VariableNames', {'Name'});
+    nodesTable = table(names,'VariableNames', {'Name'});
     G = digraph(srcs,dests,weights,nodesTable);
-        
+
     % Sort the nodes topologically to find the final node.
     N = toposort(G);
     % Find the final node.
     nK = N(end);
 
     % % Visualization for debugging.
-    % figure; 
+    % figure;
     % plot(G,'EdgeLabel', G.Edges.Weight, ...
     %     'NodeLabel', cellfun(@(name) findnode(G,name),G.Nodes.Name));
 
     % Use a reverse depth-first traversal to construct a nested cell array.
-    [layers,~] = aux_buildNestedCellArray(num2cell(layerslist), ...
-        G,nK,[]);
+    [layers,~] = aux_buildNestedCellArray(objs,G,nK,[]);
+end
+
+function [srcs,dests,weights,names,objs] = ...
+        aux_duplicateForks(srcs,dests,weights,names,objs)
+    % A pure fan-out whose branches reconverge at the *same* merge is a normal
+    % shared prefix (left to the traversal to hoist). Only when the branches
+    % feed *different* downstream merges (shared across merges at different
+    % depths) must the node be duplicated into each path. Identity residual
+    % skips (a direct add/concat successor) are also left untouched.
+    for guard = 1:numel(names)*4   % bound: each pass duplicates one fork
+        changed = false;
+        uniqSrcs = unique(srcs,'stable');
+        for s = 1:numel(uniqSrcs)
+            f = uniqSrcs{s};
+            outE = find(strcmp(srcs,f));
+            inE  = find(strcmp(dests,f));
+            if numel(outE) <= 1 || isempty(inE)
+                continue;   % single successor, or an input node
+            end
+            % Residual skip into a merge -> leave for the traversal.
+            succIsMerge = false;
+            for q = outE'
+                di = find(strcmp(names,dests{q}),1);
+                if ~isempty(di) && aux_isMergeLayer(objs{di})
+                    succIsMerge = true; break;
+                end
+            end
+            if succIsMerge
+                continue;
+            end
+            % Leave forks whose branches all reach the same downstream merges.
+            sig0 = aux_reachableMergeSig(dests{outE(1)},srcs,dests,names,objs);
+            sameMerges = true;
+            for q = outE(2:end)'
+                if ~strcmp(sig0, ...
+                        aux_reachableMergeSig(dests{q},srcs,dests,names,objs))
+                    sameMerges = false; break;
+                end
+            end
+            if sameMerges
+                continue;
+            end
+            % Move every out-edge except the first onto a fresh copy of f.
+            for t = 2:numel(outE)
+                e = outE(t);
+                newName = sprintf('%s_dup%d',f,t);
+                while any(strcmp(names,newName))
+                    newName = [newName '_'];
+                end
+                names{end+1,1} = newName;
+                objs{end+1,1}  = aux_renameLayer(objs{strcmp(names,f)},newName);
+                srcs{e} = newName;                     % f->s_t becomes copy->s_t
+                for k = inE'                           % copy f's incoming edges
+                    srcs{end+1,1}    = srcs{k};
+                    dests{end+1,1}   = newName;
+                    weights(end+1,1) = weights(k);
+                end
+            end
+            changed = true;
+            break;   % lists changed; restart the scan
+        end
+        if ~changed
+            break;
+        end
+    end
+end
+
+function sig = aux_reachableMergeSig(start,srcs,dests,names,objs)
+    % Signature (sorted names) of all merge nodes reachable forward from start.
+    seen = {}; stack = {start}; merges = {};
+    while ~isempty(stack)
+        n = stack{end}; stack(end) = [];
+        if any(strcmp(seen,n)); continue; end
+        seen{end+1} = n;
+        di = find(strcmp(names,n),1);
+        if ~isempty(di) && aux_isMergeLayer(objs{di})
+            merges{end+1} = n;   % record but keep traversing past it
+        end
+        stack = [stack, dests(strcmp(srcs,n))'];
+    end
+    sig = strjoin(sort(merges),'|');
+end
+
+function tf = aux_isMergeLayer(l)
+    tf = isa(l,'nnet.cnn.layer.AdditionLayer') || ...
+        isa(l,'nnet.cnn.layer.ConcatenationLayer');
+end
+
+function l = aux_renameLayer(l,newName)
+    % Copy a (value-class) DLT layer under a new unique name.
+    l.Name = newName;
 end
 
 function [layers,G,ni,currEdgeIdx] = aux_buildNestedCellArray(dltLayers,G, ...

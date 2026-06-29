@@ -35,6 +35,7 @@ function res = prepare_instance(benchName,modelPath,vnnlibPath,varargin)
 % Last update:   04-May-2026
 %                06-June-2026 (BK, multi-network support and v1/v2 counterexample format)
 %                11-June-2026 (BK, cersyve/malbeware/sat_relu support)
+%                29-June-2026 (TL, load test_nano directly for multi-net benchmarks)
 % Last revision: ---
 
 % ------------------------------ BEGIN CODE -------------------------------
@@ -75,7 +76,12 @@ try
         fprintf(' done\n');
     end
 
-    if ismember(benchName_,{'monotonic_acasxu','isomorphic_acasxu'})
+    % Multi-network benchmarks pass modelPath as a "[('f',..),('g',..)]" list;
+    % the post-benchmark test_nano instance passes a single ONNX path -> load
+    % it directly instead of building the (2-network) joint network.
+    isMultiNet = ismember(benchName_,{'monotonic_acasxu','isomorphic_acasxu'}) ...
+        && startsWith(strip(modelPath),'[');
+    if isMultiNet
         % ---- Multi-network path ------------------------------------------
         % Build the composite network from the parsed joint spec: the joint
         % polytope X0 encodes which input dims are coupled across networks.
@@ -232,13 +238,14 @@ elseif strcmp(benchName,'sat_relu')
     nn = neuralNetwork.readONNXNetwork(modelPath,verbose,'BC');
 
 elseif strcmp(benchName,'soundnessbench')
-    % residual variant not supported by the ONNX import
-    if contains(modelName{1},'residual')
-        throw(CORAerror('CORA:notSupported',...
-            sprintf("Model '%s' of benchmark '%s' is not " + ...
-            "supported!",modelPath,benchName)));
+    % Residual model: dag importer for the skip connections; input size 128
+    % passed explicitly (dag order puts a reshape before the input layer).
+    if strcmp(modelName{1},'model_residual')
+        nn = neuralNetwork.readONNXNetwork(modelPath,verbose,'BC', ...
+            '','dagnetwork',true,128);
+    else
+        nn = neuralNetwork.readONNXNetwork(modelPath,verbose,'BC');
     end
-    nn = neuralNetwork.readONNXNetwork(modelPath,verbose,'BC');
 
 elseif strcmp(benchName,'tinyimagenet')
     nn = neuralNetwork.readONNXNetwork(modelPath,verbose,'BCSS', ...
